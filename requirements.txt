@@ -7,3 +7,4 @@ uvicorn
 pyyaml
 matplotlib
 joblib
+tensorboard
