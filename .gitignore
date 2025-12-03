@@ -1,0 +1,16 @@
+# Data
+*.csv
+*.xlsx
+data/
+
+# Models
+*.pth
+*.pkl
+checkpoints/
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.env
+.DS_Store
