@@ -8,6 +8,15 @@ import json
 from datetime import datetime
 from scipy.stats import norm
 
+# ==========================================
+# INPUT ORDER TO MODEL (ห้ามเปลี่ยน):
+# [0] t (Time to Maturity)
+# [1] S (Spot Price)
+# [2] sigma (Volatility)
+# [3] r (Risk-free Rate)
+# [4] K (Strike Price)
+# ==========================================
+
 # --- 1. Utility: Analytical Solution (for Validation) ---
 def analytical_solution(S, K, t, r, sigma):
     """
@@ -274,7 +283,7 @@ def main():
         optimizer.step()
 
         # --- C. Logging (TensorBoard) --- (ดูด้วยคำสั่ง tensorboard --logdir=runs)
-        # บันทึกทุก 10 Epoch เพื่อประหยัดพื้นที่ (ปรับได้)
+        # บันทึกทุก 10 Epoch (ปรับได้)
         if i % 10 == 0:
             writer.add_scalar('Loss/Total', total_loss.item(), i)
             writer.add_scalar('Loss/PDE', pde_loss.item(), i)
