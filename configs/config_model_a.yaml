@@ -1,0 +1,21 @@
+market:
+  strike_price: 116000.0
+  s_min: 30000.0
+  s_max: 300000.0
+  t_max: 0.5          # ครึ่งปี
+  sigma_min: 0.1      # 10%
+  sigma_max: 2.0      # 200%
+  r_min: 0.0          # 0%
+  r_max: 0.15         # 15%
+
+model:
+  n_input: 4          # S, t, sigma, r
+  n_output: 1         # V (Option Price)
+  n_hidden: 128
+  n_layers: 8
+
+training:
+  epochs: 50000
+  learning_rate: 0.001
+  batch_size: 8000
+  pde_weight: 1.0     # น้ำหนักของ Physics Loss
