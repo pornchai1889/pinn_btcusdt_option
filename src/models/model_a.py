@@ -33,7 +33,7 @@ def analytical_solution(S, K, t, r, sigma):
 def main():
     # --- 2. Setup Directory & Logging ---
     current_time = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-    run_name = f"train_{current_time}_Universal5Inputs"
+    run_name = f"train_{current_time}_Universal5Inputs_FullLog"
     
     base_output_dir = "runs"
     result_dir = os.path.join(base_output_dir, run_name)
@@ -282,20 +282,20 @@ def main():
         total_loss.backward()
         optimizer.step()
 
-        # --- C. Logging (TensorBoard) --- (ดูด้วยคำสั่ง tensorboard --logdir=runs)
-        # บันทึกทุก 10 Epoch (ปรับได้)
+        # --- C. Logging (TensorBoard) ---
+        # บันทึกทุก 10 Epoch เพื่อประหยัดพื้นที่ (ปรับได้)
         if i % 10 == 0:
             writer.add_scalar('Loss/Total', total_loss.item(), i)
             writer.add_scalar('Loss/PDE', pde_loss.item(), i)
             writer.add_scalar('Loss/Data_Total', loss_data_total.item(), i)
             
-            # Granular Loss
+            # Granular Loss (บันทึกละเอียดทุกเม็ดตามที่ขอ)
             writer.add_scalar('Loss_Detail/IVP', loss_ivp.item(), i)
             writer.add_scalar('Loss_Detail/BVP_Total', loss_bvp_total.item(), i)
             writer.add_scalar('Loss_Detail/BVP1_Min', loss_bvp1.item(), i)
             writer.add_scalar('Loss_Detail/BVP2_Max', loss_bvp2.item(), i)
 
-        # --- D. Validation Metrics (RMSE & R) ---
+        # --- D. Validation Metrics & Text Logging ---
         # ตรวจสอบทุกๆ val_interval Epochs
         if (i + 1) % CONFIG["training"]["val_interval"] == 0:
             model.eval()
@@ -306,17 +306,34 @@ def main():
                 # K_val เป็น numpy array อยู่แล้ว (จากขั้นตอน Denormalize)
                 V_val_pred = v_val_pred_ratio * K_val.flatten()
                 
-                # RMSE
+                # RMSE (Root Mean Squared Error)
                 rmse = np.sqrt(np.mean((V_val_true.flatten() - V_val_pred)**2))
                 
                 # R (Correlation)
                 r_score = np.corrcoef(V_val_true.flatten(), V_val_pred)[0, 1]
+
+                # MAPE (Mean Absolute Percentage Error)
+                # กรองค่า 0 หรือค่าที่เล็กมากออกก่อนหาร เพื่อกัน error
+                mask = V_val_true.flatten() > 1.0 
+                if np.sum(mask) > 0:
+                    mape = np.mean(np.abs((V_val_true.flatten()[mask] - V_val_pred[mask]) / V_val_true.flatten()[mask])) * 100
+                else:
+                    mape = 0.0
                 
-                # Log Metrics
+                # Log Metrics to TensorBoard
                 writer.add_scalar('Metrics/RMSE', rmse, i)
                 writer.add_scalar('Metrics/R_Score', r_score, i)
+                writer.add_scalar('Metrics/MAPE_Percent', mape, i)
                 
-                logging.info(f"Epoch {i+1}/{EPOCHS} | Loss: {total_loss.item():.6f} | RMSE: {rmse:.4f} | R: {r_score:.4f}")
+                # Log Everything to Text File
+                logging.info(
+                    f"Epoch {i+1:5d} | "
+                    f"Tot: {total_loss.item():.6f} | "
+                    f"PDE: {pde_loss.item():.6f} | "
+                    f"Data: {loss_data_total.item():.6f} "
+                    f"(IVP:{loss_ivp.item():.6f} BVP:{loss_bvp_total.item():.6f}) | "
+                    f"RMSE: {rmse:.4f} | R: {r_score:.4f} | MAPE: {mape:.2f}%"
+                )
             
             model.train() # กลับเข้าโหมดเทรน
 
@@ -324,7 +341,7 @@ def main():
     writer.close()
 
     # --- 8. Save Model ---
-    model_save_path = os.path.join(result_dir, "final_model.pth")
+    model_save_path = os.path.join(result_dir, "model.pth")
     torch.save(model.state_dict(), model_save_path)
     logging.info(f"Model saved to: {model_save_path}")
 
