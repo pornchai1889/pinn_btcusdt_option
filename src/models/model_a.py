@@ -40,6 +40,7 @@ def calculate_smape(true, pred):
 
 def main():
     # --- 2. Setup Directory & Logging ---
+
     current_time = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     run_name = f"train_{current_time}_Universal5Inputs"
     
@@ -81,7 +82,7 @@ def main():
             "epochs": 80000,
             "lr": 1e-4,
             "n_sample_data": 8000,
-            "n_sample_pde_multiplier": 4,
+            "n_sample_pde_multiplier": 5,
             "physics_loss_weight": 1.0,
             "val_interval": 1000,
             "n_val_sample": 20000
@@ -365,4 +366,9 @@ def main():
     logging.info(f"Model saved to: {model_save_path}")
 
 if __name__ == "__main__":
+    # --- (GPU Warmup) ---
+    if torch.cuda.is_available():
+        torch.zeros(1).cuda()
+        print("GPU Warmed up and ready!")
+        
     main()
