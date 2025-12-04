@@ -17,17 +17,31 @@ from scipy.stats import norm
 # [4] K (Strike Price)
 # ==========================================
 
-# --- 1. Utility: Analytical Solution (for Validation) ---
+# --- 1. Utility Functions ---
 def analytical_solution(S, K, t, r, sigma):
-    t = np.maximum(t, 1e-10)
+    """
+    Calculate Black-Scholes European Call Option Price.
+    t is time to maturity (tau).
+    """
+    t = np.maximum(t, 1e-10) # Avoid div by zero
     d1 = (np.log(S / K) + (r + 0.5 * sigma ** 2) * t) / (sigma * np.sqrt(t))
     d2 = d1 - sigma * np.sqrt(t)
     return S * norm.cdf(d1) - K * np.exp(-r * t) * norm.cdf(d2)
 
+def calculate_smape(true, pred):
+    """
+    Symmetric Mean Absolute Percentage Error (SMAPE).
+    Range: 0-100% (Stable for small values)
+    """
+    denominator = (np.abs(true) + np.abs(pred)) / 2.0
+    diff = np.abs(true - pred)
+    # Avoid division by zero
+    return np.mean(diff / (denominator + 1e-8)) * 100
+
 def main():
     # --- 2. Setup Directory & Logging ---
     current_time = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-    run_name = f"train_{current_time}_Universal5Inputs_FullMetrics"
+    run_name = f"train_{current_time}_Universal5Inputs"
     
     base_output_dir = "runs"
     result_dir = os.path.join(base_output_dir, run_name)
@@ -42,22 +56,23 @@ def main():
     
     writer = SummaryWriter(log_dir=result_dir)
     logging.info(f"--- Started Experiment: {run_name} ---")
+    logging.info(f"--- Artifacts saved to: {result_dir} ---")
 
     # --- 3. Configuration ---
     CONFIG = {
         "device": "cuda:0" if torch.cuda.is_available() else "cpu",
         "market": {
-            "T_MAX": 1.0,
+            "T_MAX": 1.0,             # 1 Year coverage
             "S_range": [0.0, 1000000.0],
             "K_range": [10000.0, 200000.0],
-            "t_range": [0.0, 1.0],
+            "t_range": [0.0, 1.0],    # Input t is Time to Maturity
             "sigma_range": [0.1, 2.0],
             "r_range": [0.0, 0.15]
         },
         "sampling": {
-            "focus_ratio": 0.8,
-            "moneyness_range": [0.5, 1.5],
-            "trading_zone": [0.8, 1.2]
+            "focus_ratio": 0.8,           # 80% focus around Strike
+            "moneyness_range": [0.5, 1.5],# Training range
+            "trading_zone": [0.8, 1.2]    # Evaluation range
         },
         "model": {
             "n_input": 5, "n_output": 1, "n_hidden": 128, "n_layers": 8
@@ -69,16 +84,18 @@ def main():
             "n_sample_pde_multiplier": 4,
             "physics_loss_weight": 1.0,
             "val_interval": 1000,
-            "n_val_sample": 5000
+            "n_val_sample": 20000
         }
     }
     
     DEVICE = torch.device(CONFIG["device"])
     logging.info(f"Using device: {DEVICE}")
 
+    # Save Config
     with open(os.path.join(result_dir, "config.json"), 'w') as f:
         json.dump(CONFIG, f, indent=4)
 
+    # Extract Config
     c_m = CONFIG["market"]
     c_s = CONFIG["sampling"]
     S_min, S_max = c_m["S_range"]
@@ -96,6 +113,7 @@ def main():
 
     # --- 5. Data Generation Functions ---
     def get_diff_data(n):
+        # 1. K & S (Mixture Sampling)
         K_points = np.random.uniform(K_min, K_max, (n, 1))
         n_focus = int(n * c_s["focus_ratio"])
         n_wide = n - n_focus
@@ -106,10 +124,12 @@ def main():
         S_wide = np.random.uniform(S_min, S_max, (n_wide, 1))
         S_points = np.clip(np.concatenate([S_focus, S_wide], axis=0), S_min, S_max)
 
+        # 2. Others
         t_points = np.random.uniform(t_min, t_max, (n, 1))
         sigma_points = np.random.uniform(sig_min, sig_max, (n, 1))
         r_points = np.random.uniform(r_min, r_max, (n, 1))
 
+        # 3. Normalize
         t_norm = normalize_val(t_points, t_min, t_max)
         S_norm = normalize_val(S_points, S_min, S_max)
         sig_norm = normalize_val(sigma_points, sig_min, sig_max)
@@ -119,28 +139,20 @@ def main():
         return np.concatenate([t_norm, S_norm, sig_norm, r_norm, K_norm], axis=1)
 
     def get_ivp_data(n):
-        # IVP: Time to maturity = 0
+        # IVP: t=0
         t_points = np.zeros((n, 1)) 
-        
         K_points = np.random.uniform(K_min, K_max, (n, 1))
         
-        # --- Mixture Sampling (80/20) ---
-        n_focus = int(n * c_s["focus_ratio"]) # 80%
-        n_wide = n - n_focus                  # 20%
-        
-        # 1. กลุ่มราคา S เน้น (รอบๆ K)
+        # Mixture Sampling for IVP as well
+        n_focus = int(n * c_s["focus_ratio"])
+        n_wide = n - n_focus
         m_min, m_max = c_s["moneyness_range"]
+        
         moneyness = np.random.uniform(m_min, m_max, (n_focus, 1))
         S_focus = K_points[:n_focus] * moneyness
-        
-        # 2. กลุ่มราคา S กว้าง 
         S_wide = np.random.uniform(S_min, S_max, (n_wide, 1))
-        
-        # รวมราคา S และตัดขอบ
-        S_points = np.concatenate([S_focus, S_wide], axis=0)
-        S_points = np.clip(S_points, S_min, S_max) # <--- Clip เพื่อกันไม่ให้ราคา S หลุดกรอบ
-        # -----------------------------------------------------------
-        
+        S_points = np.clip(np.concatenate([S_focus, S_wide], axis=0), S_min, S_max)
+
         sigma_points = np.random.uniform(sig_min, sig_max, (n, 1))
         r_points = np.random.uniform(r_min, r_max, (n, 1))
 
@@ -154,7 +166,6 @@ def main():
         
         # Payoff: max(S-K, 0)
         y_val = np.fmax(S_points - K_points, 0)
-        
         return X_norm, y_val / K_points
 
     def get_bvp_data(n):
@@ -223,23 +234,18 @@ def main():
     V_val_true = analytical_solution(S_val, K_val, t_val, r_val, sig_val)
     X_val_tensor = torch.from_numpy(X_val_norm).float().to(DEVICE)
     
-    # Mask for Trading Zone
+    # Masks
     moneyness_val = S_val.flatten() / K_val.flatten()
     tz_min, tz_max = c_s["trading_zone"]
     mask_trading_zone = (moneyness_val >= tz_min) & (moneyness_val <= tz_max)
-    
-    # Mask for Non-Zero Values (for MAPE)
-    mask_nz_global = V_val_true.flatten() > 1.0
-    mask_nz_tz = mask_trading_zone & mask_nz_global
 
     # --- 8. Training Loop ---
     logging.info("\n--- Starting Training ---")
-    
     for i in range(EPOCHS):
         model.train()
         optimizer.zero_grad()
         
-        # --- A. Data Loss ---
+        # Data Loss
         ivp_x, ivp_y = get_ivp_data(N_SAMPLE_DATA)
         ivp_pred = model(torch.from_numpy(ivp_x).float().to(DEVICE))
         loss_ivp = loss_fn(ivp_pred, torch.from_numpy(ivp_y).float().to(DEVICE))
@@ -251,9 +257,9 @@ def main():
         loss_bvp2 = loss_fn(pred_bvp2, torch.from_numpy(bvp_y2).float().to(DEVICE))
         loss_bvp_total = loss_bvp1 + loss_bvp2
         
-        loss_data_total = loss_ivp + loss_bvp_total
+        data_loss = loss_ivp + loss_bvp_total
 
-        # --- B. Physics Loss ---
+        # Physics Loss
         X_pde_norm = get_diff_data(N_SAMPLE_PDE)
         X_pde_tensor = torch.from_numpy(X_pde_norm).float().to(DEVICE).requires_grad_()
         v_pred_norm = model(X_pde_tensor)
@@ -276,69 +282,75 @@ def main():
         pde_res = dV_dt - (0.5 * sigma_pde**2 * S_pde**2 * d2V_dS2 + r_pde * S_pde * dV_dS - r_pde * V_real)
         pde_loss = PHYSICS_WEIGHT * loss_fn(pde_res / K_pde, torch.zeros_like(pde_res))
 
-        total_loss = loss_data_total + pde_loss
+        total_loss = data_loss + pde_loss
         total_loss.backward()
         optimizer.step()
 
-        # --- C. Logging (TensorBoard & Text) ---
-        # Log ทุก 1000 Epoch
+        # --- C. Logging (TensorBoard) ---
+        if i % 10 == 0:
+            writer.add_scalar('Loss/Total', total_loss.item(), i)
+            writer.add_scalar('Loss/PDE', pde_loss.item(), i)
+            writer.add_scalar('Loss/Data_Total', data_loss.item(), i)
+            writer.add_scalar('Loss_Detail/IVP', loss_ivp.item(), i)
+            writer.add_scalar('Loss_Detail/BVP_Total', loss_bvp_total.item(), i)
+            writer.add_scalar('Loss_Detail/BVP1_Min', loss_bvp1.item(), i)
+            writer.add_scalar('Loss_Detail/BVP2_Max', loss_bvp2.item(), i)
+
+        # --- D. Validation Metrics (Interval Check) ---
         if (i + 1) % CONFIG["training"]["val_interval"] == 0:
             model.eval()
             with torch.no_grad():
-                # Validation Prediction
                 v_val_pred_ratio = model(X_val_tensor).cpu().numpy().flatten()
                 V_val_pred = v_val_pred_ratio * K_val.flatten()
                 V_true = V_val_true.flatten()
                 
-                # --- 1. Calculate Global Metrics ---
-                rmse_g = np.sqrt(np.mean((V_true - V_val_pred)**2))
+                # 1. Global Metrics
+                diff = V_val_pred - V_true 
+                rmse_g = np.sqrt(np.mean(diff**2))
+                mae_g = np.mean(np.abs(diff))
+                max_err_g = np.max(np.abs(diff))
+                bias_g = np.mean(diff)
                 r_g = np.corrcoef(V_true, V_val_pred)[0, 1]
-                mape_g = 0.0
-                if np.sum(mask_nz_global) > 0:
-                    mape_g = np.mean(np.abs((V_true[mask_nz_global] - V_val_pred[mask_nz_global]) / V_true[mask_nz_global])) * 100
+                # SMAPE Global
+                smape_g = calculate_smape(V_true, V_val_pred)
 
-                # --- 2. Calculate Trading Zone Metrics ---
-                rmse_tz, r_tz, mape_tz = 0.0, 0.0, 0.0
+                # 2. Trading Zone Metrics
+                rmse_tz, mae_tz, max_err_tz, bias_tz, r_tz, smape_tz = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+                
                 if np.sum(mask_trading_zone) > 0:
                     v_true_tz = V_true[mask_trading_zone]
                     v_pred_tz = V_val_pred[mask_trading_zone]
+                    diff_tz = v_pred_tz - v_true_tz
                     
-                    rmse_tz = np.sqrt(np.mean((v_true_tz - v_pred_tz)**2))
+                    rmse_tz = np.sqrt(np.mean(diff_tz**2))
+                    mae_tz = np.mean(np.abs(diff_tz))
+                    max_err_tz = np.max(np.abs(diff_tz))
+                    bias_tz = np.mean(diff_tz)
                     r_tz = np.corrcoef(v_true_tz, v_pred_tz)[0, 1]
-                    
-                    # MAPE TZ (ใช้ mask_nz_tz ที่กรอง 0 ออกแล้ว)
-                    if np.sum(mask_nz_tz) > 0:
-                        v_true_tz_nz = V_true[mask_nz_tz]
-                        v_pred_tz_nz = V_val_pred[mask_nz_tz]
-                        mape_tz = np.mean(np.abs((v_true_tz_nz - v_pred_tz_nz) / v_true_tz_nz)) * 100
+                    smape_tz = calculate_smape(v_true_tz, v_pred_tz)
 
-                # --- 3. Log to TensorBoard ---
-                # Loss
-                writer.add_scalar('Loss/Total', total_loss.item(), i)
-                writer.add_scalar('Loss/PDE', pde_loss.item(), i)
-                writer.add_scalar('Loss/Data_Total', loss_data_total.item(), i)
-                writer.add_scalar('Loss_Detail/IVP', loss_ivp.item(), i)
-                writer.add_scalar('Loss_Detail/BVP_Total', loss_bvp_total.item(), i)
-                writer.add_scalar('Loss_Detail/BVP1_Min', loss_bvp1.item(), i)
-                writer.add_scalar('Loss_Detail/BVP2_Max', loss_bvp2.item(), i)
-                
-                # Global Metrics
+                # 3. Log to TensorBoard
                 writer.add_scalar('Metrics_Global/RMSE', rmse_g, i)
+                writer.add_scalar('Metrics_Global/MAE', mae_g, i)
+                writer.add_scalar('Metrics_Global/SMAPE', smape_g, i)
+                writer.add_scalar('Metrics_Global/Bias', bias_g, i)
                 writer.add_scalar('Metrics_Global/R', r_g, i)
-                writer.add_scalar('Metrics_Global/MAPE', mape_g, i)
+                writer.add_scalar('Metrics_Global/Max_Error', max_err_g, i)
                 
-                # Trading Zone Metrics
                 writer.add_scalar('Metrics_TZ/RMSE', rmse_tz, i)
+                writer.add_scalar('Metrics_TZ/MAE', mae_tz, i)
+                writer.add_scalar('Metrics_TZ/SMAPE', smape_tz, i)
+                writer.add_scalar('Metrics_TZ/Bias', bias_tz, i)
                 writer.add_scalar('Metrics_TZ/R', r_tz, i)
-                writer.add_scalar('Metrics_TZ/MAPE', mape_tz, i)
+                writer.add_scalar('Metrics_TZ/Max_Error', max_err_tz, i)
 
-                # --- 4. Log to Text File (Full Details) ---
+                # 4. Log to Text File
                 log_msg = (
                     f"Epoch {i+1:5d} | "
-                    f"Loss: {total_loss.item():.5f} (PDE:{pde_loss.item():.5f} Data:{loss_data_total.item():.5f}) | "
-                    f"BVP: {loss_bvp_total.item():.5f} (L:{loss_bvp1.item():.5f} U:{loss_bvp2.item():.5f}) | "
-                    f"Global [RMSE:{rmse_g:.2f} R:{r_g:.4f} MAPE:{mape_g:.2f}%] | "
-                    f"Zone [RMSE:{rmse_tz:.2f} R:{r_tz:.4f} MAPE:{mape_tz:.2f}%]"
+                    f"Loss: {total_loss.item():.5f} (PDE:{pde_loss.item():.5f} Data:{data_loss.item():.5f}) | "
+                    f"Detail: [IVP:{loss_ivp.item():.5f} BVP:{loss_bvp_total.item():.5f} (L:{loss_bvp1.item():.5f} U:{loss_bvp2.item():.5f})] | "
+                    f"Global: [RMSE:{rmse_g:.2f} MAE:{mae_g:.2f} SMAPE:{smape_g:.2f}% Bias:{bias_g:.2f} R:{r_g:.4f} MaxErr:{max_err_g:.2f}] | "
+                    f"TZ: [RMSE:{rmse_tz:.2f} MAE:{mae_tz:.2f} SMAPE:{smape_tz:.2f}% Bias:{bias_tz:.2f} R:{r_tz:.4f} MaxErr:{max_err_tz:.2f}]"
                 )
                 logging.info(log_msg)
             
