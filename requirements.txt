@@ -1,10 +1,20 @@
+# --- Core AI & Math ---
 torch
 numpy
 pandas
-scikit-learn
-fastapi
-uvicorn
-pyyaml
-matplotlib
-joblib
-tensorboard
+scipy           
+scikit-learn    
+
+# --- Visualization & Tracking ---
+matplotlib      
+tensorboard     # ใช้ดูผลการเทรนแบบ Real-time
+
+# --- API & Server (Production) ---
+fastapi         # สร้าง API Server
+uvicorn         # รัน Server
+pydantic        # ใช้ตรวจสอบข้อมูล Input ของ API (ปกติมากับ fastapi แต่ลงเเผื่อไว้)
+requests        # ใช้เขียนสคริปต์ Python ทดสอบ API
+
+# --- Utilities ---
+pyyaml          # โหลด Config
+joblib          # โหลด/เซฟโมเดล ML ทั่วไป
