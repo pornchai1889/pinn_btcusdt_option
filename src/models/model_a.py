@@ -7,6 +7,7 @@ import logging
 import json
 from datetime import datetime
 from scipy.stats import norm
+from tqdm import tqdm
 
 # ==========================================
 # INPUT ORDER TO MODEL (ห้ามเปลี่ยน):
@@ -76,16 +77,16 @@ def main():
             "trading_zone": [0.8, 1.2]    # Evaluation range
         },
         "model": {
-            "n_input": 5, "n_output": 1, "n_hidden": 128, "n_layers": 8
+            "n_input": 5, "n_output": 1, "n_hidden": 256, "n_layers": 6
         },
         "training": {
-            "epochs": 80000,
+            "epochs": 200000,
             "lr": 1e-4,
-            "n_sample_data": 8000,
+            "n_sample_data": 10000,
             "n_sample_pde_multiplier": 5,
             "physics_loss_weight": 1.0,
-            "val_interval": 1000,
-            "n_val_sample": 20000
+            "val_interval": 5000,
+            "n_val_sample": 50000
         }
     }
     
@@ -242,7 +243,7 @@ def main():
 
     # --- 8. Training Loop ---
     logging.info("\n--- Starting Training ---")
-    for i in range(EPOCHS):
+    for i in tqdm(range(EPOCHS), desc="Training PINN", unit="epoch"):
         model.train()
         optimizer.zero_grad()
         
