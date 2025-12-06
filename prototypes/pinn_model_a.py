@@ -64,29 +64,29 @@ def main():
     CONFIG = {
         "device": "cuda:0" if torch.cuda.is_available() else "cpu",
         "market": {
-            "T_MAX": 1.0,             # 1 Year coverage
+            "T_MAX": 0.25,            
             "S_range": [0.0, 1000000.0],
-            "K_range": [10000.0, 200000.0],
-            "t_range": [0.0, 1.0],    # Input t is Time to Maturity
-            "sigma_range": [0.1, 2.0],
-            "r_range": [0.0, 0.15]
+            "K_range": [50000.0, 150000.0],
+            "t_range": [0.0, 0.25],    # Input t is Time to Maturity (หน่วนปี) 0 ถึง T_MAX
+            "sigma_range": [0.1, 1.0],
+            "r_range": [0.0, 0.1]
         },
         "sampling": {
-            "focus_ratio": 0.8,           # 80% focus around Strike
-            "moneyness_range": [0.5, 1.5],# Training range
+            "focus_ratio": 0.9,           # 90% focus around Strike
+            "moneyness_range": [0.8, 1.2],# Training range
             "trading_zone": [0.8, 1.2]    # Evaluation range
         },
         "model": {
             "n_input": 5, "n_output": 1, "n_hidden": 256, "n_layers": 6
         },
         "training": {
-            "epochs": 200000,
+            "epochs": 300000,
             "lr": 1e-4,
             "n_sample_data": 10000,
             "n_sample_pde_multiplier": 5,
             "physics_loss_weight": 1.0,
             "val_interval": 1000,
-            "n_val_sample": 50000
+            "n_val_sample": 100000
         }
     }
     
@@ -243,6 +243,7 @@ def main():
 
     # --- 8. Training Loop ---
     logging.info("\n--- Starting Training ---")
+    
     for i in tqdm(range(EPOCHS), desc="Training PINN", unit="epoch"):
         model.train()
         optimizer.zero_grad()
@@ -349,13 +350,18 @@ def main():
                 # 4. Log to Text File
                 log_msg = (
                     f"Epoch {i+1:5d} | "
-                    f"Loss: {total_loss.item():.5f} (PDE:{pde_loss.item():.5f} Data:{data_loss.item():.5f}) | "
-                    f"Detail: [IVP:{loss_ivp.item():.5f} BVP:{loss_bvp_total.item():.5f} (L:{loss_bvp1.item():.5f} U:{loss_bvp2.item():.5f})] | "
+                    f"Loss: {total_loss.item():.8f} (PDE:{pde_loss.item():.8f} Data:{data_loss.item():.8f}) | "
+                    f"Detail: [IVP:{loss_ivp.item():.8f} BVP:{loss_bvp_total.item():.8f} (L:{loss_bvp1.item():.8f} U:{loss_bvp2.item():.8f})] | "
                     f"Global: [RMSE:{rmse_g:.2f} MAE:{mae_g:.2f} SMAPE:{smape_g:.2f}% Bias:{bias_g:.2f} R:{r_g:.4f} MaxErr:{max_err_g:.2f}] | "
                     f"TZ: [RMSE:{rmse_tz:.2f} MAE:{mae_tz:.2f} SMAPE:{smape_tz:.2f}% Bias:{bias_tz:.2f} R:{r_tz:.4f} MaxErr:{max_err_tz:.2f}]"
                 )
                 logging.info(log_msg)
-            
+                
+        if (i + 1) % 10000 == 0:
+            filename = f"checkpoint_epoch_{i+1}.pth"
+            torch.save(model.state_dict(), os.path.join(result_dir, filename))
+            print(f"Saved checkpoint: {filename}")
+                    
             model.train()
 
     logging.info("--- Training Finished ---")
@@ -373,3 +379,5 @@ if __name__ == "__main__":
         print("GPU Warmed up and ready!")
         
     main()
+    
+    #กดรันบน terminal แยกไว้ก่อนเพื่อเตรียมดูผลการเทรน: tensorboard --logdir=runs
