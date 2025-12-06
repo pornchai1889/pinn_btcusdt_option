@@ -16,7 +16,7 @@ from scipy.stats import norm
 RUN_FOLDER = "runs/train_2025-12-04_12-33-35_Universal5Inputs"  
 
 # 2. ไฟล์ข้อมูลตลาดจริง (CSV)
-CSV_FILE = "data/raw/BTC-251204-93000-C_Daily_30m.csv" 
+CSV_FILE = "data/raw/BTC-251226-120000-C_Quarterly_2h.csv" 
 
 # 3. ค่าสมมติ (สำหรับ r เพราะไม่มีข้อมูลจริงใน csv นี้)
 RISK_FREE_RATE = 0.05
@@ -306,7 +306,7 @@ def main():
     plt.tight_layout()
     
     # Save Plot
-    save_path = os.path.join(RUN_FOLDER, f"test_result_{file_basename}.png")
+    save_path = os.path.join(RUN_FOLDER, f"result_{file_basename}_sigma{LOOKBACK_DAYS}day_r{RISK_FREE_RATE}.png")
     plt.savefig(save_path, dpi=300)
     print(f"Graph saved to: {save_path}")
     plt.show()

@@ -64,10 +64,11 @@ def main():
     CONFIG = {
         "device": "cuda:0" if torch.cuda.is_available() else "cpu",
         "market": {
-            "T_MAX": 1.0,             # 1 Year coverage
+            "T_MAX": 1.0,            
             "S_range": [0.0, 1000000.0],
-            "K_range": [10000.0, 200000.0],
-            "t_range": [0.0, 1.0],    # Input t is Time to Maturity
+            "K_range": [10000.0, 500000.0],
+            "K_step": 1000.0,          # <--- ปรับ Step การสุ่ม K ได้ที่นี่
+            "t_range": [0.0, 1.0],    # Input t is Time to Maturity (หน่วนปี) 0 ถึง T_MAX
             "sigma_range": [0.1, 2.0],
             "r_range": [0.0, 0.15]
         },
@@ -77,16 +78,16 @@ def main():
             "trading_zone": [0.8, 1.2]    # Evaluation range
         },
         "model": {
-            "n_input": 5, "n_output": 1, "n_hidden": 256, "n_layers": 6
+            "n_input": 5, "n_output": 1, "n_hidden": 128, "n_layers": 6
         },
         "training": {
-            "epochs": 200000,
+            "epochs": 300000,
             "lr": 1e-4,
-            "n_sample_data": 10000,
+            "n_sample_data": 20000,
             "n_sample_pde_multiplier": 5,
             "physics_loss_weight": 1.0,
             "val_interval": 1000,
-            "n_val_sample": 50000
+            "n_val_sample": 100000
         }
     }
     
@@ -102,6 +103,7 @@ def main():
     c_s = CONFIG["sampling"]
     S_min, S_max = c_m["S_range"]
     K_min, K_max = c_m["K_range"]
+    K_step_val = c_m.get("K_step", 1) # 1 เป็นค่าพื้นฐานกรณีไม่ได้ระบุ step
     t_min, t_max = c_m["t_range"]
     sig_min, sig_max = c_m["sigma_range"]
     r_min, r_max = c_m["r_range"]
@@ -113,10 +115,28 @@ def main():
     def denormalize_val(val_norm, v_min, v_max):
         return val_norm * (v_max - v_min) + v_min
 
+    # --- Helper for Discrete K Sampling ---
+    def get_discrete_K(n, k_min, k_max, step):
+        if step is None or step <= 0:
+            return np.random.uniform(k_min, k_max, (n, 1))
+            
+        aligned_min = np.ceil(k_min / step) * step
+        aligned_max = np.floor(k_max / step) * step
+        
+        if aligned_max < aligned_min:
+            return np.random.uniform(k_min, k_max, (n, 1))
+            
+        n_steps = int((aligned_max - aligned_min) / step)
+        random_steps = np.random.randint(0, n_steps + 1, (n, 1))
+        return aligned_min + random_steps * step
+
     # --- 5. Data Generation Functions ---
     def get_diff_data(n):
         # 1. K & S (Mixture Sampling)
-        K_points = np.random.uniform(K_min, K_max, (n, 1))
+        # --- [MODIFIED] Use Discrete K ---
+        K_points = get_discrete_K(n, K_min, K_max, K_step_val)
+        # ---------------------------------
+        
         n_focus = int(n * c_s["focus_ratio"])
         n_wide = n - n_focus
         
@@ -143,7 +163,10 @@ def main():
     def get_ivp_data(n):
         # IVP: t=0
         t_points = np.zeros((n, 1)) 
-        K_points = np.random.uniform(K_min, K_max, (n, 1))
+        
+        # --- [MODIFIED] Use Discrete K ---
+        K_points = get_discrete_K(n, K_min, K_max, K_step_val)
+        # ---------------------------------
         
         # Mixture Sampling for IVP as well
         n_focus = int(n * c_s["focus_ratio"])
@@ -174,7 +197,10 @@ def main():
         t_points = np.random.uniform(t_min, t_max, (n, 1))
         sigma_points = np.random.uniform(sig_min, sig_max, (n, 1))
         r_points = np.random.uniform(r_min, r_max, (n, 1))
-        K_points = np.random.uniform(K_min, K_max, (n, 1))
+        
+        # --- [MODIFIED] Use Discrete K ---
+        K_points = get_discrete_K(n, K_min, K_max, K_step_val)
+        # ---------------------------------
         
         t_norm = normalize_val(t_points, t_min, t_max)
         sig_norm = normalize_val(sigma_points, sig_min, sig_max)
@@ -243,6 +269,7 @@ def main():
 
     # --- 8. Training Loop ---
     logging.info("\n--- Starting Training ---")
+    
     for i in tqdm(range(EPOCHS), desc="Training PINN", unit="epoch"):
         model.train()
         optimizer.zero_grad()
@@ -349,13 +376,18 @@ def main():
                 # 4. Log to Text File
                 log_msg = (
                     f"Epoch {i+1:5d} | "
-                    f"Loss: {total_loss.item():.5f} (PDE:{pde_loss.item():.5f} Data:{data_loss.item():.5f}) | "
-                    f"Detail: [IVP:{loss_ivp.item():.5f} BVP:{loss_bvp_total.item():.5f} (L:{loss_bvp1.item():.5f} U:{loss_bvp2.item():.5f})] | "
+                    f"Loss: {total_loss.item():.8f} (PDE:{pde_loss.item():.8f} Data:{data_loss.item():.8f}) | "
+                    f"Detail: [IVP:{loss_ivp.item():.8f} BVP:{loss_bvp_total.item():.8f} (L:{loss_bvp1.item():.8f} U:{loss_bvp2.item():.8f})] | "
                     f"Global: [RMSE:{rmse_g:.2f} MAE:{mae_g:.2f} SMAPE:{smape_g:.2f}% Bias:{bias_g:.2f} R:{r_g:.4f} MaxErr:{max_err_g:.2f}] | "
                     f"TZ: [RMSE:{rmse_tz:.2f} MAE:{mae_tz:.2f} SMAPE:{smape_tz:.2f}% Bias:{bias_tz:.2f} R:{r_tz:.4f} MaxErr:{max_err_tz:.2f}]"
                 )
                 logging.info(log_msg)
-            
+                
+        if (i + 1) % 10000 == 0:
+            filename = f"checkpoint_epoch_{i+1}.pth"
+            torch.save(model.state_dict(), os.path.join(result_dir, filename))
+            print(f"Saved checkpoint: {filename}")
+                    
             model.train()
 
     logging.info("--- Training Finished ---")
@@ -373,3 +405,5 @@ if __name__ == "__main__":
         print("GPU Warmed up and ready!")
         
     main()
+    
+    #กดรันบน terminal แยกไว้ก่อนเพื่อเตรียมดูผลการเทรน: tensorboard --logdir=runs

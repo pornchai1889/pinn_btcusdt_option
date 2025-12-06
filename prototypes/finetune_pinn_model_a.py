@@ -15,25 +15,33 @@ from tqdm import tqdm
 BASE_RUN_DIR = "runs/train_2025-12-04_12-33-35_Universal5Inputs" 
 
 FT_CONFIG = {
-    "epochs": 200000,
-    "lr": 1e-5,                 # LR ต่ำๆ
-    "n_sample_data": 10000,     
+    "epochs": 300000,
+    "lr": 1e-5,                 # Learning Rate
+    "n_sample_data": 10000,     # Batch size for training
     "n_sample_pde_multiplier": 5,
     "physics_loss_weight": 1.0,
     "val_interval": 1000,
+    "n_val_samples": 100000,     # จำนวนตัวอย่างสำหรับ Validation
     
-    # --- [ส่วนที่ปรับได้อิสระ] ---
+    # --- [ส่วนที่ปรับ Sampling ได้อิสระ] ---
     "sampling": {
-        # 1. Focus Moneyness: เน้น S รอบๆ K (เหมือนเดิม)
+        # 1. Focus Moneyness: เน้น S รอบๆ K
         "focus_ratio": 0.9,           
-        "moneyness_range": [0.8, 1.2], # บีบให้แคบลงเพื่อความแม่นยำ
+        "moneyness_range": [0.8, 1.2],
+        "trading_zone": [0.8, 1.2],
         
-        # 2. [ใหม่] Focus K: เน้นสุ่ม K เฉพาะช่วงที่เราสนใจ (เช่น ราคาตลาดปัจจุบัน)
-        # ถ้าไม่กำหนด (None) จะสุ่ม 10k-200k เหมือนเดิม
-        # โมเดลจะเน้นเทรนแค่ช่วงนี้ แต่ใช้สเกลเดิม
-        "target_k_range": [80000.0, 120000.0], 
+        # กำหนด Step ของ Strike Price (เช่น 1000, 100, 1)
+        "K_step": 1000.0, 
 
-        "trading_zone": [0.8, 1.2]    
+        # 2. Target Ranges: กำหนดช่วงที่ต้องการ Fine-tune เป็นพิเศษ
+        # - ใส่ [min, max] เพื่อบีบช่วง
+        # - ใส่ None เพื่อใช้ช่วงกว้างเดิม (Universal Range)
+        "target_ranges": {
+            "K": [50000.0, 150000.0], 
+            "r": [0.05, 0.05],                 
+            "sigma": [0.1, 1.0],            
+            "t": [0.0, 0.25]           # เน้นสัญญาใกล้หมดอายุ (0-3 เดือน)
+        }
     }
 }
 # ==============================================================================
@@ -65,7 +73,7 @@ def main():
 
     # --- 2. Setup Directory ---
     current_time = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-    ft_folder_name = f"ft_{current_time}_TargetedK"
+    ft_folder_name = f"ft_{current_time}_TargetedParams"
     ft_result_dir = os.path.join(BASE_RUN_DIR, "fine_tune", ft_folder_name)
     os.makedirs(ft_result_dir, exist_ok=True)
 
@@ -82,72 +90,112 @@ def main():
     with open(os.path.join(ft_result_dir, "config_ft.json"), 'w') as f:
         json.dump(CONFIG, f, indent=4)
 
-    # Extract Params (ใช้ Scale เดิม ห้ามเปลี่ยน!)
+    # Extract Global Params (Scale เดิม ห้ามเปลี่ยน!)
     DEVICE = torch.device(CONFIG["device"])
     c_m = CONFIG["market"]
     c_s = CONFIG["sampling"]
+    
+    # Global Ranges (สำหรับ Normalization)
     S_min, S_max = c_m["S_range"]
-    K_min, K_max = c_m["K_range"] # นี่คือสเกล 0-1 ของโมเดล (ห้ามแก้)
+    K_min, K_max = c_m["K_range"]
     t_min, t_max = c_m["t_range"]
     sig_min, sig_max = c_m["sigma_range"]
     r_min, r_max = c_m["r_range"]
 
-    # --- 3. Normalization ---
+    # --- 3. Normalization Helpers ---
     def normalize_val(val, v_min, v_max):
         return (val - v_min) / (v_max - v_min)
     def denormalize_val(val_norm, v_min, v_max):
         return val_norm * (v_max - v_min) + v_min
 
-    # --- Data Gen (ปรับปรุงใหม่: รองรับ Target K) ---
-    def get_diff_data(n):
-        # 1. สุ่ม K (ตาม Target ใหม่ ถ้ามี)
-        if c_s.get("target_k_range"):
-            tk_min, tk_max = c_s["target_k_range"]
-            # สุ่มในช่วงแคบๆ ที่เราสนใจ (เช่น 90k-100k)
-            K_points = np.random.uniform(tk_min, tk_max, (n, 1))
-        else:
-            # ถ้าไม่กำหนด ก็สุ่มทั่วจักรวาลเหมือนเดิม
-            K_points = np.random.uniform(K_min, K_max, (n, 1))
+    # Helper: เลือกช่วงสุ่ม (Target vs Global)
+    def get_sample_range(global_min, global_max, target_key):
+        targets = c_s.get("target_ranges", {})
+        if targets and targets.get(target_key):
+            return targets[target_key][0], targets[target_key][1]
+        return global_min, global_max
+
+    # Helper: ฟังก์ชันสำหรับสุ่ม K แบบ Discrete Step
+    def get_discrete_K(n, k_min_target, k_max_target, step):
+        # ถ้า step เป็น None หรือ <= 0 ให้กลับไปใช้แบบ Uniform (ละเอียด)
+        if step is None or step <= 0:
+             return np.random.uniform(k_min_target, k_max_target, (n, 1))
+
+        # ปรับขอบเขตให้ลงตัวกับ step
+        aligned_min = np.ceil(k_min_target / step) * step
+        aligned_max = np.floor(k_max_target / step) * step
         
-        # 2. สุ่ม S (Mixture)
+        if aligned_max < aligned_min:
+            # Fallback ถ้าช่วงแคบกว่า step ให้ใช้ uniform ธรรมดา
+            return np.random.uniform(k_min_target, k_max_target, (n, 1))
+        
+        # คำนวณจำนวนขั้นบันได
+        n_steps = int((aligned_max - aligned_min) / step)
+        
+        # สุ่มเลขจำนวนเต็ม (Integer) แล้วคูณ step
+        random_steps = np.random.randint(0, n_steps + 1, (n, 1))
+        
+        return aligned_min + random_steps * step
+
+    # --- Data Gen (Target K แบบ Discrete) ---
+    def get_diff_data(n):
+        # 1. Sampling Limits
+        curr_K_min, curr_K_max = get_sample_range(K_min, K_max, "K")
+        curr_t_min, curr_t_max = get_sample_range(t_min, t_max, "t")
+        curr_sig_min, curr_sig_max = get_sample_range(sig_min, sig_max, "sigma")
+        curr_r_min, curr_r_max = get_sample_range(r_min, r_max, "r")
+
+        # 2. Random Sampling 
+        # --- MODIFIED: K Sampling Step from Config ---
+        # ดึงค่า K_step จาก FT_CONFIG["sampling"] ถ้าไม่มีให้ใช้ Default 1000
+        k_step_val = c_s.get("K_step", 1000.0) 
+        K_points = get_discrete_K(n, curr_K_min, curr_K_max, step=k_step_val)
+        # ---------------------------------------------
+        
+        t_points = np.random.uniform(curr_t_min, curr_t_max, (n, 1))
+        sigma_points = np.random.uniform(curr_sig_min, curr_sig_max, (n, 1))
+        r_points = np.random.uniform(curr_r_min, curr_r_max, (n, 1))
+
+        # 3. S Sampling (Mixture based on Moneyness)
         n_focus = int(n * c_s["focus_ratio"])
         n_wide = n - n_focus
         m_min, m_max = c_s["moneyness_range"]
         
-        # Focus Group
+        # Focus Group (S อิงตาม K ที่สุ่มมา)
         moneyness = np.random.uniform(m_min, m_max, (n_focus, 1)) 
         S_focus = K_points[:n_focus] * moneyness
         
-        # Wide Group (ยังต้องมี เพื่อกันลืมความรู้เดิม)
+        # Wide Group (สุ่ม S กว้างๆ แต่ยังอยู่ในขอบเขต Global)
         S_wide = np.random.uniform(S_min, S_max, (n_wide, 1))
         
         S_points = np.clip(np.concatenate([S_focus, S_wide], axis=0), S_min, S_max)
 
-        # 3. Normalize (สำคัญ! ต้องใช้ K_min, K_max ตัวเดิมจาก Config แม่)
+        # 4. Normalize (สำคัญ! ต้องใช้ Global Min/Max เสมอ เพื่อรักษา Scale เดิมของ Model)
         K_norm = normalize_val(K_points, K_min, K_max) 
         S_norm = normalize_val(S_points, S_min, S_max)
-        
-        # Others
-        t_points = np.random.uniform(t_min, t_max, (n, 1))
-        sigma_points = np.random.uniform(sig_min, sig_max, (n, 1))
-        r_points = np.random.uniform(r_min, r_max, (n, 1))
-
         t_norm = normalize_val(t_points, t_min, t_max)
         sig_norm = normalize_val(sigma_points, sig_min, sig_max)
         r_norm = normalize_val(r_points, r_min, r_max)
 
         return np.concatenate([t_norm, S_norm, sig_norm, r_norm, K_norm], axis=1)
 
-    # (ฟังก์ชัน get_ivp_data และ get_bvp_data ก็ต้องแก้ logic สุ่ม K เหมือนกัน)
     def get_ivp_data(n):
+        # Sampling Limits
+        curr_K_min, curr_K_max = get_sample_range(K_min, K_max, "K")
+        curr_sig_min, curr_sig_max = get_sample_range(sig_min, sig_max, "sigma")
+        curr_r_min, curr_r_max = get_sample_range(r_min, r_max, "r")
+        # t สำหรับ IVP คือ 0 เสมอ
+        
         t_points = np.zeros((n, 1))
         
-        if c_s.get("target_k_range"):
-            tk_min, tk_max = c_s["target_k_range"]
-            K_points = np.random.uniform(tk_min, tk_max, (n, 1))
-        else:
-            K_points = np.random.uniform(K_min, K_max, (n, 1))
-            
+        # --- MODIFIED: K Sampling Step from Config ---
+        k_step_val = c_s.get("K_step", 1000.0)
+        K_points = get_discrete_K(n, curr_K_min, curr_K_max, step=k_step_val)
+        # ---------------------------------------------
+        
+        sigma_points = np.random.uniform(curr_sig_min, curr_sig_max, (n, 1))
+        r_points = np.random.uniform(curr_r_min, curr_r_max, (n, 1))
+
         n_focus = int(n * c_s["focus_ratio"])
         n_wide = n - n_focus
         m_min, m_max = c_s["moneyness_range"]
@@ -156,10 +204,7 @@ def main():
         S_wide = np.random.uniform(S_min, S_max, (n_wide, 1))
         S_points = np.clip(np.concatenate([S_focus, S_wide], axis=0), S_min, S_max)
 
-        sigma_points = np.random.uniform(sig_min, sig_max, (n, 1))
-        r_points = np.random.uniform(r_min, r_max, (n, 1))
-
-        # Normalize (ใช้ Scale เดิม)
+        # Normalize (Global Scale)
         t_norm = normalize_val(t_points, t_min, t_max)
         S_norm = normalize_val(S_points, S_min, S_max)
         sig_norm = normalize_val(sigma_points, sig_min, sig_max)
@@ -171,17 +216,22 @@ def main():
         return X_norm, y_val / K_points
 
     def get_bvp_data(n):
-        # BVP ก็ควรเน้น K ช่วงนี้ด้วย
-        if c_s.get("target_k_range"):
-            tk_min, tk_max = c_s["target_k_range"]
-            K_points = np.random.uniform(tk_min, tk_max, (n, 1))
-        else:
-            K_points = np.random.uniform(K_min, K_max, (n, 1))
-            
-        t_points = np.random.uniform(t_min, t_max, (n, 1))
-        sigma_points = np.random.uniform(sig_min, sig_max, (n, 1))
-        r_points = np.random.uniform(r_min, r_max, (n, 1))
+        # Sampling Limits
+        curr_K_min, curr_K_max = get_sample_range(K_min, K_max, "K")
+        curr_t_min, curr_t_max = get_sample_range(t_min, t_max, "t")
+        curr_sig_min, curr_sig_max = get_sample_range(sig_min, sig_max, "sigma")
+        curr_r_min, curr_r_max = get_sample_range(r_min, r_max, "r")
+
+        # --- MODIFIED: K Sampling Step from Config ---
+        k_step_val = c_s.get("K_step", 1000.0)
+        K_points = get_discrete_K(n, curr_K_min, curr_K_max, step=k_step_val)
+        # ---------------------------------------------
+
+        t_points = np.random.uniform(curr_t_min, curr_t_max, (n, 1))
+        sigma_points = np.random.uniform(curr_sig_min, curr_sig_max, (n, 1))
+        r_points = np.random.uniform(curr_r_min, curr_r_max, (n, 1))
         
+        # Normalize (Global Scale)
         t_norm = normalize_val(t_points, t_min, t_max)
         sig_norm = normalize_val(sigma_points, sig_min, sig_max)
         r_norm = normalize_val(r_points, r_min, r_max)
@@ -223,10 +273,10 @@ def main():
     optimizer = torch.optim.Adam(model.parameters(), lr=FT_CONFIG["lr"])
     loss_fn = nn.MSELoss()
 
-    # --- Validation Set (สร้างตาม Target K) ---
-    logging.info("Generating Focused Validation Set...")
-    n_val = 50000
-    X_val_norm = get_diff_data(n_val) # จะสุ่ม K ในช่วง Target เอง
+    # --- Validation Set (สร้างตาม Target Ranges ใน Config) ---
+    logging.info("Generating Targeted Validation Set...")
+    N_VAL = FT_CONFIG["n_val_samples"] # ใช้ค่าจาก Config
+    X_val_norm = get_diff_data(N_VAL)
     
     t_val = denormalize_val(X_val_norm[:, 0], t_min, t_max)
     S_val = denormalize_val(X_val_norm[:, 1], S_min, S_max)
@@ -298,13 +348,13 @@ def main():
             writer.add_scalar('Loss/PDE', pde_loss.item(), i)
             writer.add_scalar('Loss/Data_Total', data_loss.item(), i)
             
-            # Granular Loss (เก็บครบเหมือนต้นฉบับ)
+            # Granular Loss
             writer.add_scalar('Loss_Detail/IVP', loss_ivp.item(), i)
             writer.add_scalar('Loss_Detail/BVP_Total', loss_bvp_total.item(), i)
             writer.add_scalar('Loss_Detail/BVP1_Min', loss_bvp1.item(), i)
             writer.add_scalar('Loss_Detail/BVP2_Max', loss_bvp2.item(), i)
 
-        # D. Full Validation Metrics (เหมือนต้นฉบับ)
+        # D. Full Validation Metrics
         if (i + 1) % FT_CONFIG["val_interval"] == 0:
             model.eval()
             with torch.no_grad():
@@ -336,7 +386,7 @@ def main():
                     r_tz = np.corrcoef(v_true_tz, v_pred_tz)[0, 1]
                     smape_tz = calculate_smape(v_true_tz, v_pred_tz)
 
-                # Log Metrics to TensorBoard
+                # Log Metrics
                 writer.add_scalar('Metrics_Global/RMSE', rmse_g, i)
                 writer.add_scalar('Metrics_Global/MAE', mae_g, i)
                 writer.add_scalar('Metrics_Global/SMAPE', smape_g, i)
@@ -351,21 +401,27 @@ def main():
                 writer.add_scalar('Metrics_TZ/R', r_tz, i)
                 writer.add_scalar('Metrics_TZ/Max_Error', max_err_tz, i)
 
-                # Log to Text File (Detailed)
+                # Log to Text File
                 log_msg = (
                     f"Epoch {i+1:5d} | "
-                    f"Loss: {total_loss.item():.5f} (PDE:{pde_loss.item():.5f} Data:{data_loss.item():.5f}) | "
-                    f"Detail: [IVP:{loss_ivp.item():.5f} BVP:{loss_bvp_total.item():.5f} (L:{loss_bvp1.item():.5f} U:{loss_bvp2.item():.5f})] | "
+                    f"Loss: {total_loss.item():.8f} (PDE:{pde_loss.item():.8f} Data:{data_loss.item():.8f}) | "
+                    f"Detail: [IVP:{loss_ivp.item():.8f} BVP:{loss_bvp_total.item():.8f} (L:{loss_bvp1.item():.8f} U:{loss_bvp2.item():.8f})] | "
                     f"Global: [RMSE:{rmse_g:.2f} MAE:{mae_g:.2f} SMAPE:{smape_g:.2f}% Bias:{bias_g:.2f} R:{r_g:.4f} MaxErr:{max_err_g:.2f}] | "
                     f"TZ: [RMSE:{rmse_tz:.2f} MAE:{mae_tz:.2f} SMAPE:{smape_tz:.2f}% Bias:{bias_tz:.2f} R:{r_tz:.4f} MaxErr:{max_err_tz:.2f}]"
                 )
                 logging.info(log_msg)
+                
+        if (i + 1) % 10000 == 0:
+            filename = f"checkpoint_epoch_{i+1}.pth"
+            torch.save(model.state_dict(), os.path.join(ft_result_dir, filename))
+            print(f"Saved checkpoint: {filename}")
+
             model.train()
 
     logging.info("--- Fine-Tuning Finished ---")
     writer.close()
 
-    model_save_path = os.path.join(ft_result_dir, "finetuned_model.pth")
+    model_save_path = os.path.join(ft_result_dir, "model.pth")
     torch.save(model.state_dict(), model_save_path)
     logging.info(f"Fine-Tuned Model saved to: {model_save_path}")
 
