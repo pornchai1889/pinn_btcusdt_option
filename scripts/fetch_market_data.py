@@ -9,8 +9,8 @@ import time as t_module
 # ==========================================
 # CONFIGURATION (ตั้งค่าที่นี่)
 # ==========================================
-TARGET_OPTION_SYMBOL = 'BTC-251226-115000-C'
-TIME_INTERVAL = '2h'  
+TARGET_OPTION_SYMBOL = 'BTC-251114-110000-C'
+TIME_INTERVAL = '1h'  
 # ==========================================
 
 MILLISECONDS_IN_YEAR = 365 * 24 * 60 * 60 * 1000
