@@ -13,11 +13,11 @@ from tqdm import tqdm
 # CONFIGURATION FOR FINE-TUNING
 # ==============================================================================
 # ระบุ Path ของ Run เดิมที่จะดึงมาจูน
-BASE_RUN_DIR = "runs/train_2025-12-06_17-17-43_Universal5Inputs" 
-MODEL_NAME = "checkpoint_epoch_230000.pth"
+BASE_RUN_DIR = "runs/train_2025-12-07_05-01-07_DynamicBoundaries" 
+MODEL_NAME = "checkpoint_epoch_20000.pth" # หรือไฟล์ล่าสุดที่คุณพอใจ
 
 FT_CONFIG = {
-    "epochs": 300000,
+    "epochs": 600000,
     "lr": 1e-5,                 # Learning Rate ต่ำๆ เพื่อประคอง Weight เดิม
     "n_sample_data": 10000,
     "n_sample_pde_multiplier": 4,
@@ -29,7 +29,7 @@ FT_CONFIG = {
     "sampling": {
         # ไม่มี focus_ratio แล้ว
         # กำหนดกรอบ S ให้วิ่งรอบๆ K ในช่วง Moneyness นี้เท่านั้น (Dynamic Domain)
-        "moneyness_range": [0.6, 1.4], # ตัวอย่าง: สนใจช่วง 60% ถึง 140% ของ K
+        "moneyness_range": [0.8, 1.2], # ตัวอย่าง: จูนให้เก่งเฉพาะช่วงแคบๆ รอบ ATM
         
         # Step การสุ่ม Strike Price
         "K_step": 1000.0, 
@@ -37,9 +37,9 @@ FT_CONFIG = {
         # [Target Ranges]: ช่วงที่ต้องการเน้นเป็นพิเศษ (Fine-tune Scope)
         # ถ้าค่าไหนเป็น None จะไปดึง Global Range เดิมมาใช้
         "target_ranges": {
-            "K": [50000.0, 150000.0],  # เน้นช่วง K นี้
-            "r": [0.04, 0.06],         # เน้นดอกเบี้ยช่วงนี้        
-            "sigma": [0.5, 1.0],       # เน้น Volatility สูง
+            "K": [60000.0, 150000.0],  # ตัวอย่าง: เน้นช่วงราคา BTC ปัจจุบัน
+            "r": [0.05, 0.05],         # เน้นดอกเบี้ยช่วงนี้        
+            "sigma": [0.2, 1.0],       # เน้น Volatility สูง
             "t": [0.0, 0.25]           # เน้นสัญญาใกล้หมดอายุ
         }
     }
@@ -73,7 +73,7 @@ def main():
 
     # --- 2. Setup Directory ---
     current_time = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-    ft_folder_name = f"ft_{current_time}_DynamicBoundaries"
+    ft_folder_name = f"ft_{current_time}_Targeted_RatioMetric"
     ft_result_dir = os.path.join(BASE_RUN_DIR, "fine_tune", ft_folder_name)
     os.makedirs(ft_result_dir, exist_ok=True)
 
@@ -274,6 +274,8 @@ def main():
     sig_val = denormalize_val(X_val_norm[:, 2], sig_min_glob, sig_max_glob)
     r_val = denormalize_val(X_val_norm[:, 3], r_min_glob, r_max_glob)
     K_val = denormalize_val(X_val_norm[:, 4], K_min_glob, K_max_glob)
+    
+    # คำนวณค่าจริง (Price)
     V_val_true = analytical_solution(S_val, K_val, t_val, r_val, sig_val)
     X_val_tensor = torch.from_numpy(X_val_norm).float().to(DEVICE)
 
@@ -340,36 +342,45 @@ def main():
             writer.add_scalar('Loss_Detail/BVP1_Min', loss_bvp1.item(), i)
             writer.add_scalar('Loss_Detail/BVP2_Max', loss_bvp2.item(), i)
 
-        # D. Validation Metrics (Unified for FT Scope)
+        # --- D. Validation Metrics (Adjusted to Ratio Scale) ---
         if (i + 1) % FT_CONFIG["val_interval"] == 0:
             model.eval()
             with torch.no_grad():
+                # 1. Prediction (V/K)
                 v_val_pred_ratio = model(X_val_tensor).cpu().numpy().flatten()
-                V_val_pred = v_val_pred_ratio * K_val.flatten()
-                V_true = V_val_true.flatten()
                 
-                # Single Unified Metric
-                diff = V_val_pred - V_true 
-                rmse = np.sqrt(np.mean(diff**2))
-                mae = np.mean(np.abs(diff))
-                max_err = np.max(np.abs(diff))
-                bias = np.mean(diff)
-                r = np.corrcoef(V_true, V_val_pred)[0, 1]
-                smape = calculate_smape(V_true, V_val_pred)
+                # 2. Ground Truth (Convert V -> V/K)
+                v_val_true_ratio = V_val_true.flatten() / K_val.flatten()
+                
+                # 3. Calculate Metrics on Ratio Scale
+                diff_ratio = v_val_pred_ratio - v_val_true_ratio
+                
+                rmse_r = np.sqrt(np.mean(diff_ratio**2))
+                mae_r = np.mean(np.abs(diff_ratio))
+                max_err_r = np.max(np.abs(diff_ratio))
+                bias_r = np.mean(diff_ratio)
+                
+                # Correlation
+                if np.std(v_val_true_ratio) == 0 or np.std(v_val_pred_ratio) == 0:
+                    r_val = 0.0
+                else:
+                    r_val = np.corrcoef(v_val_true_ratio, v_val_pred_ratio)[0, 1]
+                    
+                smape_r = calculate_smape(v_val_true_ratio, v_val_pred_ratio)
 
-                # Log Metrics
-                writer.add_scalar('Metrics/RMSE', rmse, i)
-                writer.add_scalar('Metrics/MAE', mae, i)
-                writer.add_scalar('Metrics/SMAPE', smape, i)
-                writer.add_scalar('Metrics/Bias', bias, i)
-                writer.add_scalar('Metrics/R', r, i)
-                writer.add_scalar('Metrics/Max_Error', max_err, i)
+                # Log to TensorBoard
+                writer.add_scalar('Metrics_Ratio/RMSE', rmse_r, i)
+                writer.add_scalar('Metrics_Ratio/MAE', mae_r, i)
+                writer.add_scalar('Metrics_Ratio/SMAPE', smape_r, i)
+                writer.add_scalar('Metrics_Ratio/Bias', bias_r, i)
+                writer.add_scalar('Metrics_Ratio/R', r_val, i)
+                writer.add_scalar('Metrics_Ratio/Max_Error', max_err_r, i)
 
                 # Log to Text File
                 log_msg = (
                     f"Epoch {i+1:5d} | "
                     f"Loss: {total_loss.item():.8f} (PDE:{pde_loss.item():.8f} Data:{data_loss.item():.8f}) | "
-                    f"Validation: [RMSE:{rmse:.2f} MAE:{mae:.2f} SMAPE:{smape:.2f}% Bias:{bias:.2f} R:{r:.4f} MaxErr:{max_err:.2f}]"
+                    f"Val(Ratio): [RMSE:{rmse_r:.4f} MAE:{mae_r:.4f} SMAPE:{smape_r:.2f}% Bias:{bias_r:.4f} R:{r_val:.4f} MaxErr:{max_err_r:.4f}]"
                 )
                 logging.info(log_msg)
                 

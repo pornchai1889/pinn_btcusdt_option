@@ -22,7 +22,6 @@ from tqdm import tqdm
 def analytical_solution(S, K, t, r, sigma):
     """
     Calculate Black-Scholes European Call Option Price.
-    t is time to maturity (tau).
     """
     t = np.maximum(t, 1e-10) # Avoid div by zero
     d1 = (np.log(S / K) + (r + 0.5 * sigma ** 2) * t) / (sigma * np.sqrt(t))
@@ -41,7 +40,6 @@ def calculate_smape(true, pred):
 
 def main():
     # --- 2. Setup Directory & Logging ---
-
     current_time = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     run_name = f"train_{current_time}_DynamicBoundaries"
     
@@ -80,7 +78,7 @@ def main():
             "n_input": 5, "n_output": 1, "n_hidden": 256, "n_layers": 4
         },
         "training": {
-            "epochs": 300000,
+            "epochs": 600000,
             "lr": 1e-4,
             "n_sample_data": 10000,
             "n_sample_pde_multiplier": 4,
@@ -339,36 +337,45 @@ def main():
             writer.add_scalar('Loss_Detail/BVP1_Min', loss_bvp1.item(), i)
             writer.add_scalar('Loss_Detail/BVP2_Max', loss_bvp2.item(), i)
 
-        # --- D. Validation Metrics (Interval Check) ---
+        # --- D. Validation Metrics (Adjusted to Ratio Scale) ---
         if (i + 1) % CONFIG["training"]["val_interval"] == 0:
             model.eval()
             with torch.no_grad():
+                # 1. Prediction (V/K)
                 v_val_pred_ratio = model(X_val_tensor).cpu().numpy().flatten()
-                V_val_pred = v_val_pred_ratio * K_val.flatten()
-                V_true = V_val_true.flatten()
                 
-                # Single Unified Metric (Dynamic Zone)
-                diff = V_val_pred - V_true 
-                rmse = np.sqrt(np.mean(diff**2))
-                mae = np.mean(np.abs(diff))
-                max_err = np.max(np.abs(diff))
-                bias = np.mean(diff)
-                r = np.corrcoef(V_true, V_val_pred)[0, 1]
-                smape = calculate_smape(V_true, V_val_pred)
+                # 2. Ground Truth (Convert V -> V/K)
+                v_val_true_ratio = V_val_true.flatten() / K_val.flatten()
+                
+                # 3. Calculate Metrics on Ratio Scale (0.0 - 1.0+)
+                diff_ratio = v_val_pred_ratio - v_val_true_ratio
+                
+                rmse_r = np.sqrt(np.mean(diff_ratio**2))
+                mae_r = np.mean(np.abs(diff_ratio))
+                max_err_r = np.max(np.abs(diff_ratio))
+                bias_r = np.mean(diff_ratio)
+                
+                # Handle Correlation
+                if np.std(v_val_true_ratio) == 0 or np.std(v_val_pred_ratio) == 0:
+                    r_val = 0.0
+                else:
+                    r_val = np.corrcoef(v_val_true_ratio, v_val_pred_ratio)[0, 1]
+                    
+                smape_r = calculate_smape(v_val_true_ratio, v_val_pred_ratio)
 
                 # Log to TensorBoard
-                writer.add_scalar('Metrics/RMSE', rmse, i)
-                writer.add_scalar('Metrics/MAE', mae, i)
-                writer.add_scalar('Metrics/SMAPE', smape, i)
-                writer.add_scalar('Metrics/Bias', bias, i)
-                writer.add_scalar('Metrics/R', r, i)
-                writer.add_scalar('Metrics/Max_Error', max_err, i)
+                writer.add_scalar('Metrics_Ratio/RMSE', rmse_r, i)
+                writer.add_scalar('Metrics_Ratio/MAE', mae_r, i)
+                writer.add_scalar('Metrics_Ratio/SMAPE', smape_r, i)
+                writer.add_scalar('Metrics_Ratio/Bias', bias_r, i)
+                writer.add_scalar('Metrics_Ratio/R', r_val, i)
+                writer.add_scalar('Metrics_Ratio/Max_Error', max_err_r, i)
                 
                 # Log to Text File
                 log_msg = (
                     f"Epoch {i+1:5d} | "
                     f"Loss: {total_loss.item():.8f} (PDE:{pde_loss.item():.8f} Data:{data_loss.item():.8f}) | "
-                    f"Validation: [RMSE:{rmse:.2f} MAE:{mae:.2f} SMAPE:{smape:.2f}% Bias:{bias:.2f} R:{r:.4f} MaxErr:{max_err:.2f}]"
+                    f"Val(Ratio): [RMSE:{rmse_r:.4f} MAE:{mae_r:.4f} SMAPE:{smape_r:.2f}% Bias:{bias_r:.4f} R:{r_val:.4f} MaxErr:{max_err_r:.4f}]"
                 )
                 logging.info(log_msg)
                 
