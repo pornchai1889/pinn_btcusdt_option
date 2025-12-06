@@ -67,7 +67,7 @@ def main():
             "T_MAX": 1.0,            
             "S_range": [0.0, 1000000.0],
             "K_range": [10000.0, 500000.0],
-            "K_step": 1000.0,          # <--- ปรับ Step การสุ่ม K ได้ที่นี่
+            "K_step": 1000.0,          # Step การสุ่ม K
             "t_range": [0.0, 1.0],    # Input t is Time to Maturity (หน่วนปี) 0 ถึง T_MAX
             "sigma_range": [0.1, 2.0],
             "r_range": [0.0, 0.15]
@@ -78,13 +78,13 @@ def main():
             "trading_zone": [0.8, 1.2]    # Evaluation range
         },
         "model": {
-            "n_input": 5, "n_output": 1, "n_hidden": 128, "n_layers": 6
+            "n_input": 5, "n_output": 1, "n_hidden": 256, "n_layers": 4
         },
         "training": {
             "epochs": 300000,
             "lr": 1e-4,
-            "n_sample_data": 20000,
-            "n_sample_pde_multiplier": 5,
+            "n_sample_data": 10000,
+            "n_sample_pde_multiplier": 4,
             "physics_loss_weight": 1.0,
             "val_interval": 1000,
             "n_val_sample": 100000

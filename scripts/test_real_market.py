@@ -13,13 +13,18 @@ from scipy.stats import norm
 # CONFIGURATION
 # ==========================================
 # 1. โฟลเดอร์ผลลัพธ์การเทรน
-RUN_FOLDER = "runs/train_2025-12-04_12-33-35_Universal5Inputs"  
+RUN_FOLDER = "runs/train_2025-12-06_17-17-43_Universal5Inputs"  
 
-# 2. ไฟล์ข้อมูลตลาดจริง (CSV)
-CSV_FILE = "data/raw/BTC-251226-120000-C_Quarterly_2h.csv" 
+# 2. ชื่อโมเดลที่ต้องการโหลดมาใช้งาน
+MODELL = "checkpoint_epoch_230000.pth"
 
-# 3. ค่าสมมติ (สำหรับ r เพราะไม่มีข้อมูลจริงใน csv นี้)
+# 3. ไฟล์ข้อมูลตลาดจริง (CSV)
+CSV_FILE = "data/raw/BTC-251114-110000-C_Weekly_1h.csv" 
+
+# 4. ค่าสมมติ (สำหรับ r เพราะไม่มีข้อมูลจริงใน csv นี้)
 RISK_FREE_RATE = 0.05
+
+
 
 # [เพิ่ม] กำหนดจำนวนวันย้อนหลังที่ต้องการคำนวณ Sigma
 # แนะนำ: 7 วัน (สำหรับ Weekly/Universal) หรือ 30 วัน (ถ้าเน้น Monthly)
@@ -186,7 +191,7 @@ def main():
         TRAIN_CONFIG["model"]["n_hidden"], TRAIN_CONFIG["model"]["n_layers"]
     ).to(device)
     
-    model_path = os.path.join(RUN_FOLDER, "model.pth")
+    model_path = os.path.join(RUN_FOLDER, MODELL)
     if not os.path.exists(model_path): model_path = os.path.join(RUN_FOLDER, "final_model.pth")
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.eval()

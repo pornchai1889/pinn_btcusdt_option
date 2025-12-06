@@ -12,13 +12,14 @@ from tqdm import tqdm
 # ==============================================================================
 # CONFIGURATION FOR FINE-TUNING
 # ==============================================================================
-BASE_RUN_DIR = "runs/train_2025-12-04_12-33-35_Universal5Inputs" 
+BASE_RUN_DIR = "runs/train_2025-12-06_17-17-43_Universal5Inputs" 
+MODEL = "checkpoint_epoch_230000.pth"
 
 FT_CONFIG = {
-    "epochs": 300000,
+    "epochs": 600000,
     "lr": 1e-5,                 # Learning Rate
     "n_sample_data": 10000,     # Batch size for training
-    "n_sample_pde_multiplier": 5,
+    "n_sample_pde_multiplier": 4,
     "physics_loss_weight": 1.0,
     "val_interval": 1000,
     "n_val_samples": 100000,     # จำนวนตัวอย่างสำหรับ Validation
@@ -26,7 +27,7 @@ FT_CONFIG = {
     # --- [ส่วนที่ปรับ Sampling ได้อิสระ] ---
     "sampling": {
         # 1. Focus Moneyness: เน้น S รอบๆ K
-        "focus_ratio": 0.9,           
+        "focus_ratio": 0.8,           
         "moneyness_range": [0.8, 1.2],
         "trading_zone": [0.8, 1.2],
         
@@ -73,7 +74,7 @@ def main():
 
     # --- 2. Setup Directory ---
     current_time = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-    ft_folder_name = f"ft_{current_time}_TargetedParams"
+    ft_folder_name = f"ft_{current_time}_TargetedParams_ReplayBuffer"
     ft_result_dir = os.path.join(BASE_RUN_DIR, "fine_tune", ft_folder_name)
     os.makedirs(ft_result_dir, exist_ok=True)
 
@@ -95,7 +96,7 @@ def main():
     c_m = CONFIG["market"]
     c_s = CONFIG["sampling"]
     
-    # Global Ranges (สำหรับ Normalization)
+    # Global Ranges (สำหรับ Normalization และ Wide Group Sampling)
     S_min, S_max = c_m["S_range"]
     K_min, K_max = c_m["K_range"]
     t_min, t_max = c_m["t_range"]
@@ -117,126 +118,162 @@ def main():
 
     # Helper: ฟังก์ชันสำหรับสุ่ม K แบบ Discrete Step
     def get_discrete_K(n, k_min_target, k_max_target, step):
-        # ถ้า step เป็น None หรือ <= 0 ให้กลับไปใช้แบบ Uniform (ละเอียด)
         if step is None or step <= 0:
              return np.random.uniform(k_min_target, k_max_target, (n, 1))
 
-        # ปรับขอบเขตให้ลงตัวกับ step
         aligned_min = np.ceil(k_min_target / step) * step
         aligned_max = np.floor(k_max_target / step) * step
         
         if aligned_max < aligned_min:
-            # Fallback ถ้าช่วงแคบกว่า step ให้ใช้ uniform ธรรมดา
             return np.random.uniform(k_min_target, k_max_target, (n, 1))
         
-        # คำนวณจำนวนขั้นบันได
         n_steps = int((aligned_max - aligned_min) / step)
-        
-        # สุ่มเลขจำนวนเต็ม (Integer) แล้วคูณ step
         random_steps = np.random.randint(0, n_steps + 1, (n, 1))
-        
         return aligned_min + random_steps * step
 
-    # --- Data Gen (Target K แบบ Discrete) ---
+    # --- Data Gen (Split: Focus vs Wide/Replay) ---
     def get_diff_data(n):
-        # 1. Sampling Limits
-        curr_K_min, curr_K_max = get_sample_range(K_min, K_max, "K")
-        curr_t_min, curr_t_max = get_sample_range(t_min, t_max, "t")
-        curr_sig_min, curr_sig_max = get_sample_range(sig_min, sig_max, "sigma")
-        curr_r_min, curr_r_max = get_sample_range(r_min, r_max, "r")
-
-        # 2. Random Sampling 
-        # --- MODIFIED: K Sampling Step from Config ---
-        # ดึงค่า K_step จาก FT_CONFIG["sampling"] ถ้าไม่มีให้ใช้ Default 1000
-        k_step_val = c_s.get("K_step", 1000.0) 
-        K_points = get_discrete_K(n, curr_K_min, curr_K_max, step=k_step_val)
-        # ---------------------------------------------
-        
-        t_points = np.random.uniform(curr_t_min, curr_t_max, (n, 1))
-        sigma_points = np.random.uniform(curr_sig_min, curr_sig_max, (n, 1))
-        r_points = np.random.uniform(curr_r_min, curr_r_max, (n, 1))
-
-        # 3. S Sampling (Mixture based on Moneyness)
+        # คำนวณจำนวนตัวอย่างแต่ละกลุ่มจาก focus_ratio
         n_focus = int(n * c_s["focus_ratio"])
         n_wide = n - n_focus
+        
+        # 1. Focus Group (ใช้ Target Ranges)
+        # ---------------------------------------------------
+        f_K_min, f_K_max = get_sample_range(K_min, K_max, "K")
+        f_t_min, f_t_max = get_sample_range(t_min, t_max, "t")
+        f_sig_min, f_sig_max = get_sample_range(sig_min, sig_max, "sigma")
+        f_r_min, f_r_max = get_sample_range(r_min, r_max, "r")
+        
+        k_step_val = c_s.get("K_step", 1000.0)
+        
+        # Generate Focus Params
+        K_focus = get_discrete_K(n_focus, f_K_min, f_K_max, step=k_step_val)
+        t_focus = np.random.uniform(f_t_min, f_t_max, (n_focus, 1))
+        sig_focus = np.random.uniform(f_sig_min, f_sig_max, (n_focus, 1))
+        r_focus = np.random.uniform(f_r_min, f_r_max, (n_focus, 1))
+        
+        # Focus S: อิงตาม Moneyness รอบ K
         m_min, m_max = c_s["moneyness_range"]
+        moneyness = np.random.uniform(m_min, m_max, (n_focus, 1))
+        S_focus = K_focus * moneyness
         
-        # Focus Group (S อิงตาม K ที่สุ่มมา)
-        moneyness = np.random.uniform(m_min, m_max, (n_focus, 1)) 
-        S_focus = K_points[:n_focus] * moneyness
-        
-        # Wide Group (สุ่ม S กว้างๆ แต่ยังอยู่ในขอบเขต Global)
-        S_wide = np.random.uniform(S_min, S_max, (n_wide, 1))
-        
-        S_points = np.clip(np.concatenate([S_focus, S_wide], axis=0), S_min, S_max)
+        # 2. Wide Group (ใช้ Global Ranges ล้วนๆ -> Replay Buffer)
+        # ---------------------------------------------------
+        if n_wide > 0:
+            # ใช้ Global Min/Max เสมอสำหรับกลุ่มนี้
+            K_wide = get_discrete_K(n_wide, K_min, K_max, step=k_step_val)
+            t_wide = np.random.uniform(t_min, t_max, (n_wide, 1))
+            sig_wide = np.random.uniform(sig_min, sig_max, (n_wide, 1))
+            r_wide = np.random.uniform(r_min, r_max, (n_wide, 1))
+            
+            # Wide S: สุ่มทั่วทั้งกระดาน (Global S Range)
+            S_wide = np.random.uniform(S_min, S_max, (n_wide, 1))
+            
+            # Concatenate ทั้งสองกลุ่มเข้าด้วยกัน
+            K_pts = np.concatenate([K_focus, K_wide], axis=0)
+            t_pts = np.concatenate([t_focus, t_wide], axis=0)
+            sig_pts = np.concatenate([sig_focus, sig_wide], axis=0)
+            r_pts = np.concatenate([r_focus, r_wide], axis=0)
+            S_pts = np.concatenate([S_focus, S_wide], axis=0)
+        else:
+            K_pts, t_pts, sig_pts, r_pts, S_pts = K_focus, t_focus, sig_focus, r_focus, S_focus
 
-        # 4. Normalize (สำคัญ! ต้องใช้ Global Min/Max เสมอ เพื่อรักษา Scale เดิมของ Model)
-        K_norm = normalize_val(K_points, K_min, K_max) 
-        S_norm = normalize_val(S_points, S_min, S_max)
-        t_norm = normalize_val(t_points, t_min, t_max)
-        sig_norm = normalize_val(sigma_points, sig_min, sig_max)
-        r_norm = normalize_val(r_points, r_min, r_max)
+        # Clip S ให้อยู่ในขอบเขต Global (กันหลุด)
+        S_pts = np.clip(S_pts, S_min, S_max)
+
+        # 3. Normalize (สำคัญ! ต้องใช้ Global Scale เท่านั้น)
+        t_norm = normalize_val(t_pts, t_min, t_max)
+        S_norm = normalize_val(S_pts, S_min, S_max)
+        sig_norm = normalize_val(sig_pts, sig_min, sig_max)
+        r_norm = normalize_val(r_pts, r_min, r_max)
+        K_norm = normalize_val(K_pts, K_min, K_max)
 
         return np.concatenate([t_norm, S_norm, sig_norm, r_norm, K_norm], axis=1)
 
     def get_ivp_data(n):
-        # Sampling Limits
-        curr_K_min, curr_K_max = get_sample_range(K_min, K_max, "K")
-        curr_sig_min, curr_sig_max = get_sample_range(sig_min, sig_max, "sigma")
-        curr_r_min, curr_r_max = get_sample_range(r_min, r_max, "r")
-        # t สำหรับ IVP คือ 0 เสมอ
-        
-        t_points = np.zeros((n, 1))
-        
-        # --- MODIFIED: K Sampling Step from Config ---
-        k_step_val = c_s.get("K_step", 1000.0)
-        K_points = get_discrete_K(n, curr_K_min, curr_K_max, step=k_step_val)
-        # ---------------------------------------------
-        
-        sigma_points = np.random.uniform(curr_sig_min, curr_sig_max, (n, 1))
-        r_points = np.random.uniform(curr_r_min, curr_r_max, (n, 1))
-
         n_focus = int(n * c_s["focus_ratio"])
         n_wide = n - n_focus
+        
+        k_step_val = c_s.get("K_step", 1000.0)
+        t_pts = np.zeros((n, 1)) # IVP t=0 เสมอ
+
+        # 1. Focus Group
+        f_K_min, f_K_max = get_sample_range(K_min, K_max, "K")
+        f_sig_min, f_sig_max = get_sample_range(sig_min, sig_max, "sigma")
+        f_r_min, f_r_max = get_sample_range(r_min, r_max, "r")
+        
+        K_focus = get_discrete_K(n_focus, f_K_min, f_K_max, step=k_step_val)
+        sig_focus = np.random.uniform(f_sig_min, f_sig_max, (n_focus, 1))
+        r_focus = np.random.uniform(f_r_min, f_r_max, (n_focus, 1))
+        
         m_min, m_max = c_s["moneyness_range"]
         moneyness = np.random.uniform(m_min, m_max, (n_focus, 1))
-        S_focus = K_points[:n_focus] * moneyness
-        S_wide = np.random.uniform(S_min, S_max, (n_wide, 1))
-        S_points = np.clip(np.concatenate([S_focus, S_wide], axis=0), S_min, S_max)
+        S_focus = K_focus * moneyness
 
-        # Normalize (Global Scale)
-        t_norm = normalize_val(t_points, t_min, t_max)
-        S_norm = normalize_val(S_points, S_min, S_max)
-        sig_norm = normalize_val(sigma_points, sig_min, sig_max)
-        r_norm = normalize_val(r_points, r_min, r_max)
-        K_norm = normalize_val(K_points, K_min, K_max)
+        # 2. Wide Group (Global Ranges)
+        if n_wide > 0:
+            K_wide = get_discrete_K(n_wide, K_min, K_max, step=k_step_val)
+            sig_wide = np.random.uniform(sig_min, sig_max, (n_wide, 1))
+            r_wide = np.random.uniform(r_min, r_max, (n_wide, 1))
+            S_wide = np.random.uniform(S_min, S_max, (n_wide, 1))
+            
+            K_pts = np.concatenate([K_focus, K_wide], axis=0)
+            sig_pts = np.concatenate([sig_focus, sig_wide], axis=0)
+            r_pts = np.concatenate([r_focus, r_wide], axis=0)
+            S_pts = np.concatenate([S_focus, S_wide], axis=0)
+        else:
+            K_pts, sig_pts, r_pts, S_pts = K_focus, sig_focus, r_focus, S_focus
+
+        S_pts = np.clip(S_pts, S_min, S_max)
+
+        # Normalize
+        t_norm = normalize_val(t_pts, t_min, t_max)
+        S_norm = normalize_val(S_pts, S_min, S_max)
+        sig_norm = normalize_val(sig_pts, sig_min, sig_max)
+        r_norm = normalize_val(r_pts, r_min, r_max)
+        K_norm = normalize_val(K_pts, K_min, K_max)
 
         X_norm = np.concatenate([t_norm, S_norm, sig_norm, r_norm, K_norm], axis=1)
-        y_val = np.fmax(S_points - K_points, 0)
-        return X_norm, y_val / K_points
+        y_val = np.fmax(S_pts - K_pts, 0)
+        return X_norm, y_val / K_pts
 
     def get_bvp_data(n):
-        # Sampling Limits
-        curr_K_min, curr_K_max = get_sample_range(K_min, K_max, "K")
-        curr_t_min, curr_t_max = get_sample_range(t_min, t_max, "t")
-        curr_sig_min, curr_sig_max = get_sample_range(sig_min, sig_max, "sigma")
-        curr_r_min, curr_r_max = get_sample_range(r_min, r_max, "r")
-
-        # --- MODIFIED: K Sampling Step from Config ---
+        n_focus = int(n * c_s["focus_ratio"])
+        n_wide = n - n_focus
         k_step_val = c_s.get("K_step", 1000.0)
-        K_points = get_discrete_K(n, curr_K_min, curr_K_max, step=k_step_val)
-        # ---------------------------------------------
 
-        t_points = np.random.uniform(curr_t_min, curr_t_max, (n, 1))
-        sigma_points = np.random.uniform(curr_sig_min, curr_sig_max, (n, 1))
-        r_points = np.random.uniform(curr_r_min, curr_r_max, (n, 1))
+        # 1. Focus Group
+        f_K_min, f_K_max = get_sample_range(K_min, K_max, "K")
+        f_t_min, f_t_max = get_sample_range(t_min, t_max, "t")
+        f_sig_min, f_sig_max = get_sample_range(sig_min, sig_max, "sigma")
+        f_r_min, f_r_max = get_sample_range(r_min, r_max, "r")
         
-        # Normalize (Global Scale)
-        t_norm = normalize_val(t_points, t_min, t_max)
-        sig_norm = normalize_val(sigma_points, sig_min, sig_max)
-        r_norm = normalize_val(r_points, r_min, r_max)
-        K_norm = normalize_val(K_points, K_min, K_max)
+        K_focus = get_discrete_K(n_focus, f_K_min, f_K_max, step=k_step_val)
+        t_focus = np.random.uniform(f_t_min, f_t_max, (n_focus, 1))
+        sig_focus = np.random.uniform(f_sig_min, f_sig_max, (n_focus, 1))
+        r_focus = np.random.uniform(f_r_min, f_r_max, (n_focus, 1))
 
+        # 2. Wide Group (Global Ranges)
+        if n_wide > 0:
+            K_wide = get_discrete_K(n_wide, K_min, K_max, step=k_step_val)
+            t_wide = np.random.uniform(t_min, t_max, (n_wide, 1))
+            sig_wide = np.random.uniform(sig_min, sig_max, (n_wide, 1))
+            r_wide = np.random.uniform(r_min, r_max, (n_wide, 1))
+            
+            K_pts = np.concatenate([K_focus, K_wide], axis=0)
+            t_pts = np.concatenate([t_focus, t_wide], axis=0)
+            sig_pts = np.concatenate([sig_focus, sig_wide], axis=0)
+            r_pts = np.concatenate([r_focus, r_wide], axis=0)
+        else:
+            K_pts, t_pts, sig_pts, r_pts = K_focus, t_focus, sig_focus, r_focus
+
+        # Normalize
+        t_norm = normalize_val(t_pts, t_min, t_max)
+        sig_norm = normalize_val(sig_pts, sig_min, sig_max)
+        r_norm = normalize_val(r_pts, r_min, r_max)
+        K_norm = normalize_val(K_pts, K_min, K_max)
+
+        # Boundary Conditions (Lower & Upper)
         S1_norm = normalize_val(S_min * np.ones((n, 1)), S_min, S_max)
         X1_norm = np.concatenate([t_norm, S1_norm, sig_norm, r_norm, K_norm], axis=1)
         y1_val = np.zeros((n, 1))
@@ -244,9 +281,9 @@ def main():
         S2_points = S_max * np.ones((n, 1))
         S2_norm = normalize_val(S2_points, S_min, S_max)
         X2_norm = np.concatenate([t_norm, S2_norm, sig_norm, r_norm, K_norm], axis=1)
-        y2_val = (S2_points - K_points * np.exp(-r_points * t_points)).reshape(-1, 1)
+        y2_val = (S2_points - K_pts * np.exp(-r_pts * t_pts)).reshape(-1, 1)
 
-        return X1_norm, y1_val / K_points, X2_norm, y2_val / K_points
+        return X1_norm, y1_val / K_pts, X2_norm, y2_val / K_pts
 
     # --- 4. Load Model & Train Loop (เหมือนเดิม) ---
     class UniversalPINN(nn.Module):
@@ -266,16 +303,20 @@ def main():
         CONFIG["model"]["n_hidden"], CONFIG["model"]["n_layers"]
     ).to(DEVICE)
 
-    model_path = os.path.join(BASE_RUN_DIR, "model.pth")
+    model_path = os.path.join(BASE_RUN_DIR, MODEL)
     model.load_state_dict(torch.load(model_path, map_location=DEVICE))
     logging.info("Loaded Pre-trained Weights.")
 
     optimizer = torch.optim.Adam(model.parameters(), lr=FT_CONFIG["lr"])
     loss_fn = nn.MSELoss()
 
-    # --- Validation Set (สร้างตาม Target Ranges ใน Config) ---
+    # --- Validation Set (สร้างตาม Target Ranges ใน Config -> วัดผลเฉพาะจุดที่เน้น) ---
     logging.info("Generating Targeted Validation Set...")
-    N_VAL = FT_CONFIG["n_val_samples"] # ใช้ค่าจาก Config
+    N_VAL = FT_CONFIG["n_val_samples"] 
+    # หมายเหตุ: Validation เราอาจจะอยากวัดแค่ Focus หรือทั้งสองก็ได้ 
+    # แต่ปกติ Fine-tune เราอยากรู้ว่าจุดที่เราเน้นมันดีขึ้นไหม จึงใช้ get_diff_data แบบปกติ (ซึ่งมีผสม)
+    # หรือถ้าอยาก Validate เฉพาะเป้าหมายจริงๆ อาจต้องปรับ Code ส่วนนี้
+    # *แต่ในที่นี้ใช้ get_diff_data ตาม logic ใหม่ ซึ่งจะมี wide ปนมา 10% ก็ถือว่าวัดผลรวมๆ*
     X_val_norm = get_diff_data(N_VAL)
     
     t_val = denormalize_val(X_val_norm[:, 0], t_min, t_max)
