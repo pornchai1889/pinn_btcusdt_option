@@ -29,8 +29,11 @@ FT_CONFIG = {
         "focus_ratio": 0.9,           
         "moneyness_range": [0.8, 1.2],
         "trading_zone": [0.8, 1.2],
+        
+        # กำหนด Step ของ Strike Price (เช่น 1000, 100, 1)
+        "K_step": 1000.0, 
 
-        # 2. [ใหม่] Target Ranges: กำหนดช่วงที่ต้องการ Fine-tune เป็นพิเศษ
+        # 2. Target Ranges: กำหนดช่วงที่ต้องการ Fine-tune เป็นพิเศษ
         # - ใส่ [min, max] เพื่อบีบช่วง
         # - ใส่ None เพื่อใช้ช่วงกว้างเดิม (Universal Range)
         "target_ranges": {
@@ -112,16 +115,43 @@ def main():
             return targets[target_key][0], targets[target_key][1]
         return global_min, global_max
 
-    # --- Data Gen (ปรับปรุงใหม่: รองรับ Target K, r, sigma, t) ---
+    # Helper: ฟังก์ชันสำหรับสุ่ม K แบบ Discrete Step
+    def get_discrete_K(n, k_min_target, k_max_target, step):
+        # ถ้า step เป็น None หรือ <= 0 ให้กลับไปใช้แบบ Uniform (ละเอียด)
+        if step is None or step <= 0:
+             return np.random.uniform(k_min_target, k_max_target, (n, 1))
+
+        # ปรับขอบเขตให้ลงตัวกับ step
+        aligned_min = np.ceil(k_min_target / step) * step
+        aligned_max = np.floor(k_max_target / step) * step
+        
+        if aligned_max < aligned_min:
+            # Fallback ถ้าช่วงแคบกว่า step ให้ใช้ uniform ธรรมดา
+            return np.random.uniform(k_min_target, k_max_target, (n, 1))
+        
+        # คำนวณจำนวนขั้นบันได
+        n_steps = int((aligned_max - aligned_min) / step)
+        
+        # สุ่มเลขจำนวนเต็ม (Integer) แล้วคูณ step
+        random_steps = np.random.randint(0, n_steps + 1, (n, 1))
+        
+        return aligned_min + random_steps * step
+
+    # --- Data Gen (Target K แบบ Discrete) ---
     def get_diff_data(n):
-        # 1. Sampling Limits (เช็คจาก FT_CONFIG หรือใช้ค่าเดิม)
+        # 1. Sampling Limits
         curr_K_min, curr_K_max = get_sample_range(K_min, K_max, "K")
         curr_t_min, curr_t_max = get_sample_range(t_min, t_max, "t")
         curr_sig_min, curr_sig_max = get_sample_range(sig_min, sig_max, "sigma")
         curr_r_min, curr_r_max = get_sample_range(r_min, r_max, "r")
 
-        # 2. Random Sampling based on Current/Target Limits
-        K_points = np.random.uniform(curr_K_min, curr_K_max, (n, 1))
+        # 2. Random Sampling 
+        # --- MODIFIED: K Sampling Step from Config ---
+        # ดึงค่า K_step จาก FT_CONFIG["sampling"] ถ้าไม่มีให้ใช้ Default 1000
+        k_step_val = c_s.get("K_step", 1000.0) 
+        K_points = get_discrete_K(n, curr_K_min, curr_K_max, step=k_step_val)
+        # ---------------------------------------------
+        
         t_points = np.random.uniform(curr_t_min, curr_t_max, (n, 1))
         sigma_points = np.random.uniform(curr_sig_min, curr_sig_max, (n, 1))
         r_points = np.random.uniform(curr_r_min, curr_r_max, (n, 1))
@@ -140,7 +170,7 @@ def main():
         
         S_points = np.clip(np.concatenate([S_focus, S_wide], axis=0), S_min, S_max)
 
-        # 4. Normalize (สำคัญ! ต้องใช้ Global Min/Max เสมอ)
+        # 4. Normalize (สำคัญ! ต้องใช้ Global Min/Max เสมอ เพื่อรักษา Scale เดิมของ Model)
         K_norm = normalize_val(K_points, K_min, K_max) 
         S_norm = normalize_val(S_points, S_min, S_max)
         t_norm = normalize_val(t_points, t_min, t_max)
@@ -154,10 +184,15 @@ def main():
         curr_K_min, curr_K_max = get_sample_range(K_min, K_max, "K")
         curr_sig_min, curr_sig_max = get_sample_range(sig_min, sig_max, "sigma")
         curr_r_min, curr_r_max = get_sample_range(r_min, r_max, "r")
-        # t สำหรับ IVP คือ 0 เสมอ (แต่ต้องอยู่ใน scale global)
+        # t สำหรับ IVP คือ 0 เสมอ
         
         t_points = np.zeros((n, 1))
-        K_points = np.random.uniform(curr_K_min, curr_K_max, (n, 1))
+        
+        # --- MODIFIED: K Sampling Step from Config ---
+        k_step_val = c_s.get("K_step", 1000.0)
+        K_points = get_discrete_K(n, curr_K_min, curr_K_max, step=k_step_val)
+        # ---------------------------------------------
+        
         sigma_points = np.random.uniform(curr_sig_min, curr_sig_max, (n, 1))
         r_points = np.random.uniform(curr_r_min, curr_r_max, (n, 1))
 
@@ -187,7 +222,11 @@ def main():
         curr_sig_min, curr_sig_max = get_sample_range(sig_min, sig_max, "sigma")
         curr_r_min, curr_r_max = get_sample_range(r_min, r_max, "r")
 
-        K_points = np.random.uniform(curr_K_min, curr_K_max, (n, 1))
+        # --- MODIFIED: K Sampling Step from Config ---
+        k_step_val = c_s.get("K_step", 1000.0)
+        K_points = get_discrete_K(n, curr_K_min, curr_K_max, step=k_step_val)
+        # ---------------------------------------------
+
         t_points = np.random.uniform(curr_t_min, curr_t_max, (n, 1))
         sigma_points = np.random.uniform(curr_sig_min, curr_sig_max, (n, 1))
         r_points = np.random.uniform(curr_r_min, curr_r_max, (n, 1))
