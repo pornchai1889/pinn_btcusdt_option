@@ -13,8 +13,8 @@ from tqdm import tqdm
 # CONFIGURATION FOR FINE-TUNING
 # ==============================================================================
 # ระบุ Path ของ Run เดิมที่จะดึงมาจูน
-BASE_RUN_DIR = "runs/train_2025-12-07_05-01-07_DynamicBoundaries" 
-MODEL_NAME = "checkpoint_epoch_20000.pth" # หรือไฟล์ล่าสุดที่คุณพอใจ
+BASE_RUN_DIR = "runs/train_2025-12-07_08-17-11_DynamicBoundaries" 
+MODEL_NAME = "checkpoint_epoch_340000.pth" # หรือไฟล์ล่าสุดหรือที่ loss ต่ำๆ
 
 FT_CONFIG = {
     "epochs": 600000,
@@ -37,9 +37,9 @@ FT_CONFIG = {
         # [Target Ranges]: ช่วงที่ต้องการเน้นเป็นพิเศษ (Fine-tune Scope)
         # ถ้าค่าไหนเป็น None จะไปดึง Global Range เดิมมาใช้
         "target_ranges": {
-            "K": [60000.0, 150000.0],  # ตัวอย่าง: เน้นช่วงราคา BTC ปัจจุบัน
+            "K": [70000.0, 130000.0],  # ตัวอย่าง: เน้นช่วงราคา BTC ปัจจุบัน
             "r": [0.05, 0.05],         # เน้นดอกเบี้ยช่วงนี้        
-            "sigma": [0.2, 1.0],       # เน้น Volatility สูง
+            "sigma": [0.1, 1.0],       # เน้น Volatility สูง
             "t": [0.0, 0.25]           # เน้นสัญญาใกล้หมดอายุ
         }
     }
@@ -73,7 +73,7 @@ def main():
 
     # --- 2. Setup Directory ---
     current_time = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-    ft_folder_name = f"ft_{current_time}_Targeted_RatioMetric"
+    ft_folder_name = f"ft_{current_time}"
     ft_result_dir = os.path.join(BASE_RUN_DIR, "fine_tune", ft_folder_name)
     os.makedirs(ft_result_dir, exist_ok=True)
 
@@ -87,13 +87,13 @@ def main():
     
     logging.info(f"--- Started Fine-Tuning: {ft_folder_name} ---")
     
-    with open(os.path.join(ft_result_dir, "config_ft.json"), 'w') as f:
+    with open(os.path.join(ft_result_dir, "config.json"), 'w') as f:
         json.dump(MOTHER_CONFIG, f, indent=4)
 
     # Extract Global Params (Scale เดิม ห้ามเปลี่ยน! เพื่อรักษาความรู้เดิม)
     DEVICE = torch.device(MOTHER_CONFIG["device"])
     c_m = MOTHER_CONFIG["market"]
-    c_s = MOTHER_CONFIG["sampling"] # อันนี้คือ sampling ใหม่สำหรับ FT
+    c_s = MOTHER_CONFIG["sampling"] # sampling ใหม่สำหรับ FT
     
     # Global Ranges (สำหรับ Normalization)
     S_min_glob, S_max_glob = c_m["S_range"]
@@ -379,7 +379,7 @@ def main():
                 # Log to Text File
                 log_msg = (
                     f"Epoch {i+1:5d} | "
-                    f"Loss: {total_loss.item():.8f} (PDE:{pde_loss.item():.8f} Data:{data_loss.item():.8f}) | "
+                    f"Loss: {total_loss.item():.12f} (PDE:{pde_loss.item():.12f} Data:{data_loss.item():.12f}) | "
                     f"Val(Ratio): [RMSE:{rmse_r:.4f} MAE:{mae_r:.4f} SMAPE:{smape_r:.2f}% Bias:{bias_r:.4f} R:{r_val:.4f} MaxErr:{max_err_r:.4f}]"
                 )
                 logging.info(log_msg)

@@ -13,13 +13,13 @@ from scipy.stats import norm
 # CONFIGURATION
 # ==========================================
 # 1. โฟลเดอร์ผลลัพธ์การเทรน
-RUN_FOLDER = "runs/train_2025-12-07_05-01-07_DynamicBoundaries"  
+RUN_FOLDER = "runs/train_2025-12-07_08-17-11_DynamicBoundaries/fine_tune/ft_2025-12-07_19-33-56_Targeted_RatioMetric"  
 
 # 2. ชื่อโมเดลที่ต้องการโหลดมาใช้งาน
-MODELL = "checkpoint_epoch_40000.pth"
+MODELL = "checkpoint_epoch_10000.pth"
 
 # 3. ไฟล์ข้อมูลตลาดจริง (CSV)
-CSV_FILE = "data/raw/BTC-251114-110000-C_Weekly_1h.csv" 
+CSV_FILE = "data/raw/BTC-251226-120000-C_Quarterly_2h.csv" 
 
 # 4. ค่าสมมติ (สำหรับ r เพราะไม่มีข้อมูลจริงใน csv นี้)
 RISK_FREE_RATE = 0.05

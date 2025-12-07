@@ -62,17 +62,17 @@ def main():
     CONFIG = {
         "device": "cuda:0" if torch.cuda.is_available() else "cpu",
         "market": {
-            "T_MAX": 1.0,            
+            "T_MAX": 0.25,            
             "S_range": [0.0, 1000000.0], # ใช้สำหรับ Normalization เท่านั้น (Fixed Anchor)
-            "K_range": [10000.0, 500000.0],
+            "K_range": [10000, 500000.0],
             "K_step": 1000.0,          # Step การสุ่ม K
-            "t_range": [0.0, 1.0],     # Input t is Time to Maturity
+            "t_range": [0.0, 0.25],     # Input t is Time to Maturity
             "sigma_range": [0.1, 2.0],
             "r_range": [0.0, 0.15]
         },
         "sampling": {
-            # ใช้ Moneyness กำหนดขอบเขต Dynamic: S จะถูกสุ่มในช่วง [0.5*K, 2.0*K]
-            "moneyness_range": [0.5, 2.0] 
+            # ใช้ Moneyness กำหนดขอบเขต Dynamic: S
+            "moneyness_range": [0.5, 1.5] 
         },
         "model": {
             "n_input": 5, "n_output": 1, "n_hidden": 256, "n_layers": 4
@@ -374,7 +374,7 @@ def main():
                 # Log to Text File
                 log_msg = (
                     f"Epoch {i+1:5d} | "
-                    f"Loss: {total_loss.item():.8f} (PDE:{pde_loss.item():.8f} Data:{data_loss.item():.8f}) | "
+                    f"Loss: {total_loss.item():.12f} (PDE:{pde_loss.item():.12f} Data:{data_loss.item():.12f}) | "
                     f"Val(Ratio): [RMSE:{rmse_r:.4f} MAE:{mae_r:.4f} SMAPE:{smape_r:.2f}% Bias:{bias_r:.4f} R:{r_val:.4f} MaxErr:{max_err_r:.4f}]"
                 )
                 logging.info(log_msg)
