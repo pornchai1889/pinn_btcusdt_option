@@ -13,13 +13,13 @@ from scipy.stats import norm
 # CONFIGURATION
 # ==========================================
 # 1. โฟลเดอร์ผลลัพธ์การเทรน
-RUN_FOLDER = "runs/train_2025-12-06_17-17-43_Universal5Inputs"  
+RUN_FOLDER = "runs/train_2025-12-07_08-17-11_DynamicBoundaries/fine_tune/ft_2025-12-07_19-33-56_Targeted_RatioMetric"  
 
 # 2. ชื่อโมเดลที่ต้องการโหลดมาใช้งาน
-MODELL = "checkpoint_epoch_230000.pth"
+MODELL = "checkpoint_epoch_10000.pth"
 
 # 3. ไฟล์ข้อมูลตลาดจริง (CSV)
-CSV_FILE = "data/raw/BTC-251114-110000-C_Weekly_1h.csv" 
+CSV_FILE = "data/raw/BTC-251226-120000-C_Quarterly_2h.csv" 
 
 # 4. ค่าสมมติ (สำหรับ r เพราะไม่มีข้อมูลจริงใน csv นี้)
 RISK_FREE_RATE = 0.05
@@ -41,8 +41,21 @@ class UniversalPINN(nn.Module):
         for _ in range(n_layers - 1):
             layers.append(nn.Linear(n_hidden, n_hidden))
             layers.append(activation)
+            
+        # Last layer
         layers.append(nn.Linear(n_hidden, n_output))
+            
+        # --- [ADDED] Force Positive Output ---
+        # Softplus is a smooth approximation of ReLU: log(1 + exp(x))
+        # It ensures output is always > 0 and differentiable everywhere
+        layers.append(nn.Softplus())
+            
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                    nn.init.xavier_normal_(m.weight)
+                    nn.init.zeros_(m.bias)
         self.net = nn.Sequential(*layers)
+            
     def forward(self, x): return self.net(x)
 
 # --- Helper Functions ---
