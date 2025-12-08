@@ -7,30 +7,34 @@ import matplotlib as mpl
 import os
 import json
 import requests
+import glob
+from datetime import datetime
 from scipy.stats import norm
 
 # ==========================================
 # CONFIGURATION
 # ==========================================
 # 1. โฟลเดอร์ผลลัพธ์การเทรน
-RUN_FOLDER = "runs/train_2025-12-07_08-17-11_DynamicBoundaries/fine_tune/ft_2025-12-07_19-33-56_Targeted_RatioMetric"  
+RUN_FOLDER = "runs/train_2025-12-07_08-17-11_DynamicBoundaries/fine_tune/ft_2025-12-08_09-01-39"  
 
 # 2. ชื่อโมเดลที่ต้องการโหลดมาใช้งาน
-MODELL = "checkpoint_epoch_10000.pth"
+MODELL = "checkpoint_epoch_190000.pth"
 
-# 3. ไฟล์ข้อมูลตลาดจริง (CSV)
-CSV_FILE = "data/raw/BTC-251226-120000-C_Quarterly_2h.csv" 
+# 3. โหมดการรันและการตั้งค่าไฟล์
+# "BATCH"  = รันทุกไฟล์ในโฟลเดอร์ data/raw
+# "SINGLE" = รันเฉพาะไฟล์ที่ระบุใน SINGLE_TARGET_FILE
+RUN_MODE = "BATCH" 
 
-# 4. ค่าสมมติ (สำหรับ r เพราะไม่มีข้อมูลจริงใน csv นี้)
+DATA_RAW_DIR = "data/raw"
+SINGLE_TARGET_FILE = "BTC-250919-115000-C_Weekly_2h.csv" # ใช้เมื่อ RUN_MODE = "SINGLE"
+
+# 4. ค่า r มาตรฐาน
 RISK_FREE_RATE = 0.05
-
-
 
 # [เพิ่ม] กำหนดจำนวนวันย้อนหลังที่ต้องการคำนวณ Sigma
 # แนะนำ: 7 วัน (สำหรับ Weekly/Universal) หรือ 30 วัน (ถ้าเน้น Monthly)
 LOOKBACK_DAYS = 7  
 # ==========================================
-
 
 # --- Model Definition ---
 class UniversalPINN(nn.Module):
@@ -157,7 +161,7 @@ def fetch_btc_lookback(start_time_ms, timeframe_str, limit=24):
             print(f"Failed to fetch historical BTC: {e}")
             break
             
-    print(f"Fetched total {len(all_prices)} historical BTC candles.")
+    # print(f"Fetched total {len(all_prices)} historical BTC candles.")
     
     # ถ้าได้มาเกิน (เผื่อไว้) ให้ตัดเอาเฉพาะจำนวนที่ต้องการ (เอาตัวท้ายๆ ซึ่งคือล่าสุด)
     return all_prices[-limit:]
@@ -176,44 +180,25 @@ def calculate_dynamic_volatility(main_prices, lookback_prices, window, annual_fa
         
     return vol_result
 
-def main():
-    try: mpl.rcParams['axes.unicode_minus'] = False
-    except: pass
-
-    print(f"--- Testing Real Market Data (Dynamic Mode) ---")
+def process_file(csv_file_path, model, device, train_config, output_dir, append_time_to_filename=False):
+    """
+    ฟังก์ชันประมวลผลแยก (Refactored จาก main เดิมเพื่อรองรับ Loop)
+    """
+    filename = os.path.basename(csv_file_path)
+    print(f"\nProcessing: {filename}")
     
     # 1. Parse Timeframe
-    filename = os.path.basename(CSV_FILE)
     tf_str, window_size, ann_factor = get_timeframe_params(filename, days=LOOKBACK_DAYS)
     print(f"Detected Timeframe: {tf_str}")
     print(f"Sigma Lookback: {LOOKBACK_DAYS} days ({window_size} candles)")
 
-    # 2. Load Config & Model
-    config_path = os.path.join(RUN_FOLDER, "config.json")
-    if not os.path.exists(config_path):
-        print(f"Error: Config not found at {config_path}")
-        return
-
-    with open(config_path, 'r') as f:
-        TRAIN_CONFIG = json.load(f)
-    c_m = TRAIN_CONFIG["market"]
+    c_m = train_config["market"]
     
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = UniversalPINN(
-        TRAIN_CONFIG["model"]["n_input"], TRAIN_CONFIG["model"]["n_output"],
-        TRAIN_CONFIG["model"]["n_hidden"], TRAIN_CONFIG["model"]["n_layers"]
-    ).to(device)
-    
-    model_path = os.path.join(RUN_FOLDER, MODELL)
-    if not os.path.exists(model_path): model_path = os.path.join(RUN_FOLDER, "final_model.pth")
-    model.load_state_dict(torch.load(model_path, map_location=device))
-    model.eval()
-
     # 3. Load Main Data
-    if not os.path.exists(CSV_FILE):
-        print(f"Error: CSV not found at {CSV_FILE}")
+    if not os.path.exists(csv_file_path):
+        print(f"Error: CSV not found at {csv_file_path}")
         return
-    df = pd.read_csv(CSV_FILE)
+    df = pd.read_csv(csv_file_path)
     S_data = df['btc_close_price'].values
     
     # 4. Calculate Sigma (Fetch Lookback + Calc)
@@ -226,7 +211,9 @@ def main():
     # 5. Prepare Inputs
     if 'time_to_maturity_t2m' in df.columns:
         t_data = df['time_to_maturity_t2m'].values
-    else: raise ValueError("Missing 'time_to_maturity_t2m' in CSV")
+    else: 
+        print(f"Missing 'time_to_maturity_t2m' in {filename}")
+        return
     
     r_data = np.full_like(S_data, RISK_FREE_RATE)
     
@@ -237,7 +224,9 @@ def main():
         try:
             k_val = float(filename.split('-')[2])
             K_data = np.full_like(S_data, k_val)
-        except: raise ValueError("Cannot find Strike Price")
+        except: 
+            print("Cannot find Strike Price")
+            return
 
     # 6. Normalize & Predict
     t_norm = normalize_val(t_data, 0, c_m["T_MAX"])
@@ -272,6 +261,7 @@ def main():
     print("==========================\n")
 
     # 8. Visualization (2 Subplots: Price & Volatility)
+    # [รักษาโค้ดส่วนแสดงผลเดิมไว้ทั้งหมด]
     file_basename = os.path.splitext(filename)[0]
     
     # สร้าง Canvas แบ่ง 2 ส่วน (บน 3 ส่วน, ล่าง 1 ส่วน)
@@ -283,7 +273,7 @@ def main():
     ax1.plot(t_data, V_pred_pinn, label='PINN Prediction', color='darkorange', linestyle='--', linewidth=2)
     
     ax1.set_ylabel('Option Price: V (USDT)', fontsize=12)
-    ax1.set_title(f'Universal Model Evaluation: {file_basename}\n'
+    ax1.set_title(f'PINN Model Evaluation: {file_basename}\n'
                   f'Vs Market: RMSE={rmse_mkt:.2f}, R={corr_mkt:.4f}  |  '
                   f'Vs Theory: RMSE={rmse_anal:.2f}, R={corr_anal:.4f}', fontsize=14)
     ax1.grid(True, alpha=0.3)
@@ -299,7 +289,6 @@ def main():
     ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper left', frameon=True)
 
     # --- Graph 2: Volatility (Indicator) ---
-# --- Graph 2: Volatility (Indicator) ---
     
     # สร้าง Label แบบมืออาชีพ (บอกครบ 3 ค่า: วัน, Timeframe, จำนวนแท่ง)
     # LOOKBACK_DAYS มาจาก Global Config ด้านบน
@@ -324,10 +313,79 @@ def main():
     plt.tight_layout()
     
     # Save Plot
-    save_path = os.path.join(RUN_FOLDER, f"result_{file_basename}_sigma{LOOKBACK_DAYS}day_r{RISK_FREE_RATE}.png")
+    if append_time_to_filename:
+        # กรณี Single File แปะเวลาต่อท้ายไฟล์
+        timestamp_suffix = datetime.now().strftime("%H%M%S")
+        save_filename = f"result_{file_basename}_sigma{LOOKBACK_DAYS}day_{timestamp_suffix}.png"
+    else:
+        # กรณี Batch ชื่อโฟลเดอร์ระบุเวลาไว้แล้ว
+        save_filename = f"result_{file_basename}_sigma{LOOKBACK_DAYS}day_r{RISK_FREE_RATE}.png"
+        
+    save_path = os.path.join(output_dir, save_filename)
     plt.savefig(save_path, dpi=300)
     print(f"Graph saved to: {save_path}")
-    plt.show()
+    
+    # plt.show() # ปิดไว้หากรันจำนวนมาก
+    plt.close(fig) # ปิด Figure เพื่อคืน Memory
+
+def main():
+    try: mpl.rcParams['axes.unicode_minus'] = False
+    except: pass
+
+    print(f"--- Testing Real Market Data (Mode: {RUN_MODE}) ---")
+    
+    # 2. Load Config & Model
+    config_path = os.path.join(RUN_FOLDER, "config.json")
+    if not os.path.exists(config_path):
+        print(f"Error: Config not found at {config_path}")
+        return
+
+    with open(config_path, 'r') as f:
+        TRAIN_CONFIG = json.load(f)
+    
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = UniversalPINN(
+        TRAIN_CONFIG["model"]["n_input"], TRAIN_CONFIG["model"]["n_output"],
+        TRAIN_CONFIG["model"]["n_hidden"], TRAIN_CONFIG["model"]["n_layers"]
+    ).to(device)
+    
+    model_path = os.path.join(RUN_FOLDER, MODELL)
+    if not os.path.exists(model_path): model_path = os.path.join(RUN_FOLDER, "model.pth")
+    model.load_state_dict(torch.load(model_path, map_location=device))
+    model.eval()
+
+    # --- Setup Output Directory Logic ---
+    model_name_clean = os.path.splitext(MODELL)[0]
+    now_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    
+    if RUN_MODE == "BATCH":
+        # ตั้งชื่อโฟลเดอร์: eval_batch_{Date}_{Model} (เพื่อให้เรียงตามเวลาได้ง่าย)
+        folder_name = f"eval_batch_{now_str}__{model_name_clean}"
+        output_dir = os.path.join(RUN_FOLDER, "evaluation_results", folder_name)
+        os.makedirs(output_dir, exist_ok=True)
+        print(f"Batch Output Directory: {output_dir}")
+        
+        # ค้นหาทุกไฟล์ CSV
+        search_path = os.path.join(DATA_RAW_DIR, "*.csv")
+        csv_files = glob.glob(search_path)
+        print(f"Found {len(csv_files)} files in {DATA_RAW_DIR}")
+        
+        for file_path in csv_files:
+            process_file(file_path, model, device, TRAIN_CONFIG, output_dir, append_time_to_filename=False)
+            
+    elif RUN_MODE == "SINGLE":
+        # ใช้โฟลเดอร์กลางสำหรับ Single Snapshots
+        output_dir = os.path.join(RUN_FOLDER, "eval_single_snapshots")
+        os.makedirs(output_dir, exist_ok=True)
+        print(f"Single Output Directory: {output_dir}")
+        
+        file_path = os.path.join(DATA_RAW_DIR, SINGLE_TARGET_FILE)
+        
+        # ส่ง append_time_to_filename=True เพื่อให้ไฟล์ไม่ทับกัน
+        process_file(file_path, model, device, TRAIN_CONFIG, output_dir, append_time_to_filename=True)
+        
+    else:
+        print(f"Unknown RUN_MODE: {RUN_MODE}")
 
 if __name__ == "__main__":
     main()
