@@ -12,7 +12,7 @@ from tqdm import tqdm
 # ==============================================================================
 # CONFIGURATION FOR FINE-TUNING
 # ==============================================================================
-# ระบุ Path ของ Run เดิมที่จะดึงมาจูน
+# ระบุ Path ของ Run เดิมที่จะดึงมาจูน (ไม่ว่าจะเป็น Root หรือลูกที่เคยจูนมาแล้วก็ได้)
 BASE_RUN_DIR = "runs/train_2025-12-07_08-17-11_DynamicBoundaries/fine_tune/ft_2025-12-08_09-01-39" 
 MODEL_NAME = "checkpoint_epoch_190000.pth" # หรือไฟล์ล่าสุดหรือที่ loss ต่ำๆ
 
@@ -71,10 +71,28 @@ def main():
     MOTHER_CONFIG["training"].update({k:v for k,v in FT_CONFIG.items() if k in MOTHER_CONFIG["training"]})
     MOTHER_CONFIG["sampling"] = FT_CONFIG["sampling"] # Overwrite sampling logic
 
-    # --- 2. Setup Directory ---
+    # --- 2. Setup Directory (Universal Path Logic) ---
+    # Logic: ตรวจสอบว่า BASE_RUN_DIR เป็นลูก (fine_tune) หรือ Root
+    # ถ้ามีคำว่า "fine_tune" อยู่ใน path ให้ตัดออกเพื่อหา Root ที่แท้จริง
+    # เพื่อให้ ft_result_dir ไปโผล่ที่ runs/root_name/fine_tune/ เสมอ ไม่ซ้อนลึก
+    
+    # Standardize path separator to forward slash for checking
+    normalized_base_path = BASE_RUN_DIR.replace("\\", "/")
+    
+    if "/fine_tune" in normalized_base_path:
+        # กรณีจูนต่อจากตัวที่จูนมาแล้ว (Nested) -> ตัดกลับไปหา Root
+        root_run_dir = normalized_base_path.split("/fine_tune")[0]
+        # แปลงกลับเป็น OS separator ปัจจุบัน (Windows/Linux)
+        root_run_dir = os.path.normpath(root_run_dir)
+    else:
+        # กรณีจูนจากโมเดลต้นฉบับครั้งแรก (Root)
+        root_run_dir = BASE_RUN_DIR
+
     current_time = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     ft_folder_name = f"ft_{current_time}"
-    ft_result_dir = os.path.join(BASE_RUN_DIR, "fine_tune", ft_folder_name)
+    
+    # Save Path จะอยู่ที่: Root_Run/fine_tune/ft_Dateเสมอ
+    ft_result_dir = os.path.join(root_run_dir, "fine_tune", ft_folder_name)
     os.makedirs(ft_result_dir, exist_ok=True)
 
     log_filename = os.path.join(ft_result_dir, "finetune_log.txt")
@@ -85,7 +103,9 @@ def main():
     )
     writer = SummaryWriter(log_dir=ft_result_dir)
     
-    logging.info(f"--- Started Fine-Tuning: {ft_folder_name} ---")
+    logging.info(f"--- Started Fine-Tuning ---")
+    logging.info(f"Source Model: {os.path.join(BASE_RUN_DIR, MODEL_NAME)}")
+    logging.info(f"Output Directory: {ft_result_dir}")
     
     with open(os.path.join(ft_result_dir, "config.json"), 'w') as f:
         json.dump(MOTHER_CONFIG, f, indent=4)
