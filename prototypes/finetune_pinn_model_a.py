@@ -13,12 +13,12 @@ from tqdm import tqdm
 # CONFIGURATION FOR FINE-TUNING
 # ==============================================================================
 # ระบุ Path ของ Run เดิมที่จะดึงมาจูน
-BASE_RUN_DIR = "runs/train_2025-12-07_08-17-11_DynamicBoundaries" 
-MODEL_NAME = "checkpoint_epoch_340000.pth" # หรือไฟล์ล่าสุดหรือที่ loss ต่ำๆ
+BASE_RUN_DIR = "runs/train_2025-12-07_08-17-11_DynamicBoundaries/fine_tune/ft_2025-12-08_09-01-39" 
+MODEL_NAME = "checkpoint_epoch_190000.pth" # หรือไฟล์ล่าสุดหรือที่ loss ต่ำๆ
 
 FT_CONFIG = {
     "epochs": 600000,
-    "lr": 1e-5,                 # Learning Rate ต่ำๆ เพื่อประคอง Weight เดิม
+    "lr": 1e-5,                 # Learning Rate ต่ำๆ หรือเท่ากับต้นโมเดลต้นแบบ เพื่อประคอง Weight เดิม
     "n_sample_data": 10000,
     "n_sample_pde_multiplier": 4,
     "physics_loss_weight": 1.0,
@@ -29,7 +29,7 @@ FT_CONFIG = {
     "sampling": {
         # ไม่มี focus_ratio แล้ว
         # กำหนดกรอบ S ให้วิ่งรอบๆ K ในช่วง Moneyness นี้เท่านั้น (Dynamic Domain)
-        "moneyness_range": [0.8, 1.2], # ตัวอย่าง: จูนให้เก่งเฉพาะช่วงแคบๆ รอบ ATM
+        "moneyness_range": [0.5, 1.5], # ตัวอย่าง: จูนให้เก่งเฉพาะช่วงแคบๆ รอบ ATM
         
         # Step การสุ่ม Strike Price
         "K_step": 1000.0, 
@@ -37,9 +37,9 @@ FT_CONFIG = {
         # [Target Ranges]: ช่วงที่ต้องการเน้นเป็นพิเศษ (Fine-tune Scope)
         # ถ้าค่าไหนเป็น None จะไปดึง Global Range เดิมมาใช้
         "target_ranges": {
-            "K": [70000.0, 130000.0],  # ตัวอย่าง: เน้นช่วงราคา BTC ปัจจุบัน
-            "r": [0.05, 0.05],         # เน้นดอกเบี้ยช่วงนี้        
-            "sigma": [0.1, 1.0],       # เน้น Volatility สูง
+            "K": [10000.0, 500000.0],  # ตัวอย่าง: เน้นช่วงราคา BTC ปัจจุบัน
+            "r": [0.0, 0.15],         # เน้นดอกเบี้ยช่วงนี้        
+            "sigma": [0.1, 2.0],       # เน้น Volatility สูง
             "t": [0.0, 0.25]           # เน้นสัญญาใกล้หมดอายุ
         }
     }

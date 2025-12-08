@@ -67,8 +67,8 @@ def main():
             "K_range": [10000, 500000.0],
             "K_step": 1000.0,          # Step การสุ่ม K
             "t_range": [0.0, 0.25],     # Input t is Time to Maturity
-            "sigma_range": [0.1, 2.0],
-            "r_range": [0.0, 0.15]
+            "sigma_range": [0.1, 2.5],
+            "r_range": [-0.2, 0.50]
         },
         "sampling": {
             # ใช้ Moneyness กำหนดขอบเขต Dynamic: S
