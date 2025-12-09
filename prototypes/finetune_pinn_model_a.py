@@ -20,16 +20,17 @@ MODEL_NAME = "model.pth" # หรือ checkpoint ที่ต้องกา�
 
 CHECKPOINT_EPOCHS = 10000 # จำนวนรอบที่ต้องเซฟโมเดลไว้ (สำรองเผื่อไฟดับ)
 
-# ค่าที่อนุญาตให้ปรับ 8 ตัว (นอกนั้นใช้ค่าเดิมจากโมเดลแม่)
+# ค่าที่อนุญาตให้ปรับ (นอกนั้นใช้ค่าเดิมจากโมเดลแม่)
 FT_CONFIG = {
     "epochs": 100000,           # [Adjustable] รอบการจูน
-    "lr": 1e-6,                 # [Adjustable] Learning Rate (ควรต่ำกว่าตอนเทรนแม่)
+    "lr": 1e-5,                 # [Adjustable] Learning Rate (ควรต่ำกว่าตอนเทรนแม่)
     "n_sample_data": 10000,     # [Adjustable] Batch Size
     "n_sample_pde_multiplier": 4, # [Adjustable] สัดส่วน PDE
     "physics_loss_weight": 1.0, # [Adjustable] ความสำคัญของ Physics
     "val_interval": 1000,       # [Adjustable] ความถี่ในการ Validate
     "n_val_samples": 100000,    # [Adjustable] จำนวนจุด Validate
-    "K_step": 1000.0            # [Adjustable] ความละเอียดของ Strike Price
+    "K_step": 1000.0,           # [Adjustable] ความละเอียดของ Strike Price
+    "time_sampling_power": 2.0  # [Adjustable] Power Law Factor (เน้นช่วงใกล้หมดอายุ)
 }
 # ==============================================================================
 
@@ -146,7 +147,7 @@ def plot_checkpoint_performance(model, config, save_dir, device):
     rmse = np.sqrt(np.mean((v_true_flat - v_pred_flat)**2))
     corr = np.corrcoef(v_true_flat, v_pred_flat)[0, 1]
     
-    plt.title(f'PINN vs. Analytical Predictions\n(RMSE: {rmse:.4f}, Correlation: {corr:.4f})\n{param_text}', fontsize=12)
+    plt.title(f'PINN vs. Analytical Predictions\n(RMSE: {rmse:.4f}, R: {corr:.4f})\n{param_text}', fontsize=12)
     plt.xlabel('PINN Prediction')
     plt.ylabel('Analytical Solution')
     plt.legend()
@@ -220,6 +221,10 @@ def main():
     # Update Market Params (K_step)
     MOTHER_CONFIG["market"]["K_step"] = FT_CONFIG["K_step"]
 
+    # Update Sampling Params (Power Law Time)
+    if "time_sampling_power" in FT_CONFIG:
+        MOTHER_CONFIG["sampling"]["time_sampling_power"] = FT_CONFIG["time_sampling_power"]
+
     # --- 2. Setup Directory (Universal Path Logic) ---
     # Logic: Avoid nested fine_tune folders
     normalized_base_path = BASE_RUN_DIR.replace("\\", "/")
@@ -231,7 +236,7 @@ def main():
         root_run_dir = BASE_RUN_DIR
 
     current_time = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-    ft_folder_name = f"ft_{current_time}_Adaptive"
+    ft_folder_name = f"ft_{current_time}_Adaptive_PowerLaw"
     
     ft_result_dir = os.path.join(root_run_dir, "fine_tune", ft_folder_name)
     os.makedirs(ft_result_dir, exist_ok=True)
@@ -270,7 +275,12 @@ def main():
     RANGE_WIDTH = M_max - M_min
     REAL_STD = (RANGE_WIDTH / 6.0) * ADAPTIVE_STD_FACTOR
     
-    logging.info(f"Using Mother's Sampling Logic: Range[{M_min}, {M_max}], StdFactor={ADAPTIVE_STD_FACTOR}")
+    # Extract Time Power
+    TIME_POWER = c_s.get("time_sampling_power", 2.0)
+    
+    logging.info(f"Sampling Strategy:")
+    logging.info(f" - Price: Gaussian (Range[{M_min}, {M_max}], StdFactor={ADAPTIVE_STD_FACTOR})")
+    logging.info(f" - Time:  Power Law (Power={TIME_POWER}, Focus near t=0)")
 
     # --- 3. Normalization Utilities ---
     def normalize_val(val, v_min, v_max):
@@ -291,13 +301,18 @@ def main():
         random_steps = np.random.randint(0, n_steps + 1, (n, 1))
         return aligned_min + random_steps * step
 
-    # --- 4. Data Generation Functions (Match Mother Model) ---
+    # --- 4. Data Generation Functions (Updated with Power Law) ---
     def get_diff_data(n):
         K_points = get_discrete_K(n, K_min, K_max, K_step_val)
-        # Adaptive Sampling Logic
+        
+        # Adaptive Moneyness
         moneyness = np.clip(np.random.normal(1.0, REAL_STD, (n, 1)), M_min, M_max)
         S_points = np.clip(K_points * moneyness, S_min_norm, S_max_norm)
-        t_points = np.random.uniform(t_min, t_max, (n, 1))
+        
+        # [UPDATED] Power Law Sampling for Time
+        u_time = np.random.uniform(0, 1, (n, 1))
+        t_points = t_min + (t_max - t_min) * (u_time ** TIME_POWER)
+        
         sigma_points = np.random.uniform(sig_min, sig_max, (n, 1))
         r_points = np.random.uniform(r_min, r_max, (n, 1))
 
@@ -309,6 +324,7 @@ def main():
         return np.concatenate([t_norm, S_norm, sig_norm, r_norm, K_norm], axis=1)
 
     def get_ivp_data(n):
+        # IVP is strictly t=0, no sampling needed
         t_points = np.zeros((n, 1))
         K_points = get_discrete_K(n, K_min, K_max, K_step_val)
         moneyness = np.clip(np.random.normal(1.0, REAL_STD, (n, 1)), M_min, M_max)
@@ -326,7 +342,10 @@ def main():
         return X_norm, y_val / K_points
 
     def get_bvp_data(n):
-        t_points = np.random.uniform(t_min, t_max, (n, 1))
+        # [UPDATED] Power Law Sampling for Time
+        u_time = np.random.uniform(0, 1, (n, 1))
+        t_points = t_min + (t_max - t_min) * (u_time ** TIME_POWER)
+        
         sigma_points = np.random.uniform(sig_min, sig_max, (n, 1))
         r_points = np.random.uniform(r_min, r_max, (n, 1))
         K_points = get_discrete_K(n, K_min, K_max, K_step_val)

@@ -56,20 +56,20 @@ def plot_pre_training(result_dir, config):
     
     # Extract Configs
     user_std_factor = config["sampling"]["adaptive_std"]
+    time_power = config["sampling"].get("time_sampling_power", 2.0) # Power Law Factor
     m_min, m_max = config["sampling"]["moneyness_range"]
+    t_min, t_max = config["market"]["t_range"]
     
-    # --- [CRITICAL UPDATE] Dynamic Sigma Calculation ---
-    # Formula: Real_Sigma = (Range_Width / 6) * User_Factor
-    # Div by 6 because +/- 3SD (total 6SD) covers 99.7% of a standard bell curve.
+    # --- Dynamic Sigma Calculation ---
     range_width = m_max - m_min
     std_val = (range_width / 6.0) * user_std_factor
     
     # --- Plot 1: Moneyness Density & Zones ---
     plt.figure(figsize=(12, 7))
     
-    # X range: Use the config range directly to see how it fits
+    # X range: Use the config range directly
     x = np.linspace(m_min, m_max, 1000)
-    mu = 1.0 # Always fixed at ATM for Financial Accuracy
+    mu = 1.0 # Fixed at ATM
     y = norm.pdf(x, mu, std_val)
     max_y = np.max(y)
     
@@ -84,7 +84,6 @@ def plot_pre_training(result_dir, config):
     ]
     
     zone_stats = []
-    # Dynamic Y-Limit based on peak height
     plt.ylim(bottom=-max_y*0.1, top=max_y * 1.2) 
 
     for start_sd, end_sd, color, h_ratio in zones:
@@ -94,11 +93,9 @@ def plot_pre_training(result_dir, config):
         label_txt = rf"{start_sd}-{end_sd}$\sigma$" if end_sd <= 3 else rf">{start_sd}$\sigma$ (Tails)"
         zone_stats.append((label_txt, pct_band_total, color))
 
-        # --- Draw Right Side ---
+        # Right Side
         right_start = mu + start_sd * std_val
         right_end = mu + end_sd * std_val
-        
-        # Clip plotting to visible range
         plot_start = max(right_start, m_min)
         plot_end = min(right_end, m_max)
         
@@ -106,8 +103,6 @@ def plot_pre_training(result_dir, config):
             x_fill = np.linspace(plot_start, plot_end, 200)
             y_fill = norm.pdf(x_fill, mu, std_val)
             plt.fill_between(x_fill, y_fill, color=color, alpha=0.6)
-            
-            # Text Label
             if end_sd <= 3:
                 text_x = (plot_start + plot_end) / 2
                 text_y = norm.pdf(text_x, mu, std_val) * h_ratio
@@ -116,10 +111,9 @@ def plot_pre_training(result_dir, config):
                              color='white' if start_sd < 1 else 'black', 
                              ha='center', va='center', fontsize=9, fontweight='bold')
 
-        # --- Draw Left Side ---
+        # Left Side
         left_start = mu - start_sd * std_val
         left_end = mu - end_sd * std_val
-        
         plot_start = max(left_end, m_min)
         plot_end = min(left_start, m_max)
         
@@ -127,7 +121,6 @@ def plot_pre_training(result_dir, config):
             x_fill = np.linspace(plot_start, plot_end, 200)
             y_fill = norm.pdf(x_fill, mu, std_val)
             plt.fill_between(x_fill, y_fill, color=color, alpha=0.6)
-            
             if end_sd <= 3:
                 text_x = (plot_start + plot_end) / 2
                 text_y = norm.pdf(text_x, mu, std_val) * h_ratio
@@ -136,22 +129,18 @@ def plot_pre_training(result_dir, config):
                              color='white' if start_sd < 1 else 'black', 
                              ha='center', va='center', fontsize=9, fontweight='bold')
 
-    # Axis Labels
+    # Axis Labels & Markers
     label_y_pos = -max_y * 0.06
     for i in range(1, 4):
-        # Right SD markers
         sd_pos_r = mu + i*std_val
         if m_min < sd_pos_r < m_max:
             plt.axvline(sd_pos_r, color='grey', linestyle=':', alpha=0.5, linewidth=1)
             plt.text(sd_pos_r, label_y_pos, rf"+{i}$\sigma$", ha='center', color='#333333', fontsize=9)
-        
-        # Left SD markers
         sd_pos_l = mu - i*std_val
         if m_min < sd_pos_l < m_max:
             plt.axvline(sd_pos_l, color='grey', linestyle=':', alpha=0.5, linewidth=1)
             plt.text(sd_pos_l, label_y_pos, rf"-{i}$\sigma$", ha='center', color='#333333', fontsize=9)
 
-    # ATM Marker (Always show)
     plt.text(mu, label_y_pos, rf"$\mu$", ha='center', color='black', fontsize=10, fontweight='bold')
     plt.axvline(mu, color='black', linestyle='--', alpha=0.3, linewidth=1)
 
@@ -167,7 +156,7 @@ def plot_pre_training(result_dir, config):
     plt.savefig(os.path.join(result_dir, "moneyness_density_zones.png"))
     plt.close()
 
-    # --- Plot 2: Data Sampling Distribution ---
+    # --- Plot 2: Data Sampling Distribution (UPDATED for Power Law) ---
     fix_K_mid = (config["market"]["K_range"][0] + config["market"]["K_range"][1]) / 2
     fix_K = np.round(fix_K_mid / config["market"]["K_step"]) * config["market"]["K_step"]
     
@@ -177,36 +166,41 @@ def plot_pre_training(result_dir, config):
 
     plt.figure(figsize=(12, 8))
     
-    # 1. PDE (Grey)
-    t_pde = np.random.uniform(config["market"]["t_range"][0], config["market"]["t_range"][1], n_pde)
+    # 1. PDE (Grey) - Using Power Law for Time
+    u_pde = np.random.uniform(0, 1, n_pde)
+    t_pde = t_min + (t_max - t_min) * (u_pde ** time_power) # <--- Power Law
     S_pde = fix_K * np.clip(np.random.normal(1.0, std_val, n_pde), m_min, m_max)
     plt.scatter(t_pde, S_pde, c='#cccccc', s=10, alpha=0.4, label='PDE Collocation Points')
     
-    # 2. IVP (Blue)
+    # 2. IVP (Blue) - Fixed at t=0
     t_ivp = np.zeros(n_data)
     S_ivp = fix_K * np.clip(np.random.normal(1.0, std_val, n_data), m_min, m_max)
     plt.scatter(t_ivp, S_ivp, c='blue', s=20, alpha=0.6, label='IVP (t=0)')
 
-    # 3. BVP Upper (Green)
-    t_bvp2 = np.random.uniform(config["market"]["t_range"][0], config["market"]["t_range"][1], n_data)
+    # 3. BVP Upper (Green) - Using Power Law for Time
+    u_bvp2 = np.random.uniform(0, 1, n_data)
+    t_bvp2 = t_min + (t_max - t_min) * (u_bvp2 ** time_power) # <--- Power Law
     S_bvp2 = np.full(n_data, fix_K * m_max)
     plt.scatter(t_bvp2, S_bvp2, c='green', marker='x', s=25, alpha=0.6, label=f'BVP Upper (S={fix_K * m_max:.0f})')
 
-    # 4. BVP Lower (Red)
-    t_bvp1 = np.random.uniform(config["market"]["t_range"][0], config["market"]["t_range"][1], n_data)
+    # 4. BVP Lower (Red) - Using Power Law for Time
+    u_bvp1 = np.random.uniform(0, 1, n_data)
+    t_bvp1 = t_min + (t_max - t_min) * (u_bvp1 ** time_power) # <--- Power Law
     S_bvp1 = np.full(n_data, fix_K * m_min)
     plt.scatter(t_bvp1, S_bvp1, c='red', marker='x', s=25, alpha=0.6, label=f'BVP Lower (S={fix_K * m_min:.0f})')
 
     plt.axhline(fix_K, color='black', linestyle='--', linewidth=1.5, alpha=0.5, label=f'Strike K={fix_K:,.0f}')
     
-    plt.title(rf'Data Sampling Distribution (Effective $\sigma$={std_val:.4f})', fontsize=14)
+    # Update Title to reflect Time Sampling
+    plt.title(rf'Data Sampling Distribution (Gaussian Price + Power Law Time $t \sim u^{{{time_power}}}$)', fontsize=14)
     plt.xlabel('Time to Maturity (t)')
     plt.ylabel('Spot Price (S)')
     
     info_text = (f"Point Counts (Total: {total_points:,}):\n"
                  f"PDE: {n_pde:,}\n"
                  f"IVP: {n_data:,}\n"
-                 f"BVP: {n_data*2:,}")
+                 f"BVP: {n_data*2:,}\n"
+                 f"Time Strategy: Power Law ($p={time_power}$)")
     plt.text(0.02, 0.98, info_text, transform=plt.gca().transAxes, 
              fontsize=10, va='top', bbox=dict(facecolor='white', alpha=0.9))
 
@@ -308,7 +302,7 @@ def plot_checkpoint_performance(model, config, save_dir, device):
     rmse = np.sqrt(np.mean((v_true_flat - v_pred_flat)**2))
     corr = np.corrcoef(v_true_flat, v_pred_flat)[0, 1]
     
-    plt.title(f'PINN vs. Analytical Predictions\n(RMSE: {rmse:.4f}, Correlation: {corr:.4f})\n{param_text}', fontsize=12)
+    plt.title(f'PINN vs. Analytical Predictions\n(RMSE: {rmse:.4f}, R: {corr:.4f})\n{param_text}', fontsize=12)
     plt.xlabel('PINN Prediction')
     plt.ylabel('Analytical Solution')
     plt.legend()
@@ -323,7 +317,7 @@ def plot_post_training(result_dir, history):
     Saved in the root result directory.
     """
     logging.info("Generating Post-training visualizations...")
-    plot_dir = result_dir # Save in root
+    plot_dir = result_dir 
     
     if len(history['total']) > 0:
         epochs = range(1, len(history['total']) + 1)
@@ -398,10 +392,11 @@ def main():
             "r_range": [0.0, 0.15]
         },
         "sampling": {
-            "moneyness_range": [0.0, 2.0],
-            # [CRITICAL] adaptive_std is now a FACTOR.
-            # 1.0 = Standard Bell Curve (Width = 6*Sigma) matches Range Width exactly.
-            "adaptive_std": 1.0 
+            "moneyness_range": [0.5, 1.5],
+            "adaptive_std": 1.0,
+            # [CRITICAL UPDATE] Time Sampling Power Factor
+            # 2.0 = Square (Focus on t=0)
+            "time_sampling_power": 2.0 
         },
         "validation_params": {
             "fix_sigma": 0.5,
@@ -412,7 +407,7 @@ def main():
         },
         "training": {
             "epochs": 600000,
-            "lr": 1e-3,
+            "lr": 1e-4,
             "n_sample_data": 10000,
             "n_sample_pde_multiplier": 4,
             "physics_loss_weight": 1.0,
@@ -441,15 +436,15 @@ def main():
     r_min, r_max = c_m["r_range"]
     
     M_min, M_max = c_s["moneyness_range"]
+    TIME_POWER = c_s.get("time_sampling_power", 2.0)
     
     # --- [CALCULATE REAL SIGMA] ---
-    # We want 6 * sigma to equal the total range width (if factor is 1.0)
-    # This makes the distribution "Scale Invariant"
     ADAPTIVE_STD_FACTOR = c_s.get("adaptive_std", 1.0)
     RANGE_WIDTH = M_max - M_min
     REAL_STD = (RANGE_WIDTH / 6.0) * ADAPTIVE_STD_FACTOR
     
     logging.info(f"Moneyness Range: [{M_min}, {M_max}] (Width: {RANGE_WIDTH})")
+    logging.info(f"Time Sampling: Power Law (Power={TIME_POWER}, Focus near t=0)")
     logging.info(f"Adaptive Factor: {ADAPTIVE_STD_FACTOR} => Calculated Real Sigma: {REAL_STD:.6f}")
 
     # --- 4. Normalization Utilities ---
@@ -474,10 +469,13 @@ def main():
     # --- 5. Data Generation Functions ---
     def get_diff_data(n):
         K_points = get_discrete_K(n, K_min, K_max, K_step_val)
-        # Use REAL_STD here for adaptive sampling
         moneyness = np.clip(np.random.normal(1.0, REAL_STD, (n, 1)), M_min, M_max)
         S_points = np.clip(K_points * moneyness, S_min_norm, S_max_norm)
-        t_points = np.random.uniform(t_min, t_max, (n, 1))
+        
+        # [MODIFIED] Power Law Sampling for Time
+        u_time = np.random.uniform(0, 1, (n, 1))
+        t_points = t_min + (t_max - t_min) * (u_time ** TIME_POWER)
+        
         sigma_points = np.random.uniform(sig_min, sig_max, (n, 1))
         r_points = np.random.uniform(r_min, r_max, (n, 1))
 
@@ -489,9 +487,9 @@ def main():
         return np.concatenate([t_norm, S_norm, sig_norm, r_norm, K_norm], axis=1)
 
     def get_ivp_data(n):
+        # IVP is strictly t=0, no sampling needed
         t_points = np.zeros((n, 1))
         K_points = get_discrete_K(n, K_min, K_max, K_step_val)
-        # Use REAL_STD here for adaptive sampling
         moneyness = np.clip(np.random.normal(1.0, REAL_STD, (n, 1)), M_min, M_max)
         S_points = np.clip(K_points * moneyness, S_min_norm, S_max_norm)
         sigma_points = np.random.uniform(sig_min, sig_max, (n, 1))
@@ -507,7 +505,10 @@ def main():
         return X_norm, y_val / K_points
 
     def get_bvp_data(n):
-        t_points = np.random.uniform(t_min, t_max, (n, 1))
+        # [MODIFIED] Power Law Sampling for Time
+        u_time = np.random.uniform(0, 1, (n, 1))
+        t_points = t_min + (t_max - t_min) * (u_time ** TIME_POWER)
+        
         sigma_points = np.random.uniform(sig_min, sig_max, (n, 1))
         r_points = np.random.uniform(r_min, r_max, (n, 1))
         K_points = get_discrete_K(n, K_min, K_max, K_step_val)
@@ -665,16 +666,11 @@ def main():
                 logging.info(log_msg)
         
         # --- [STEP 2] CHECKPOINT & PLOTS ---
-        
         if (i + 1) % CONFIG["training"]["checkpoint_epochs"] == 0:
-            # Create checkpoint folder
             ckpt_dir = os.path.join(result_dir, "checkpoints", f"epoch_{i+1}")
             os.makedirs(ckpt_dir, exist_ok=True)
             
-            # Save Model
             torch.save(model.state_dict(), os.path.join(ckpt_dir, "model.pth"))
-            
-            # Save Checkpoint Plots (3D & Scatter)
             plot_checkpoint_performance(model, CONFIG, ckpt_dir, DEVICE)
             
             print(f"Saved checkpoint and plots to: {ckpt_dir}")
@@ -685,10 +681,8 @@ def main():
 
     # --- 9. Final Save ---
     torch.save(model.state_dict(), os.path.join(result_dir, "model.pth"))
-    
-    # [ADDED] Plot performance for the final model as well
     logging.info("Generating Final Performance Plots...")
-    plot_checkpoint_performance(model, CONFIG, result_dir, DEVICE) # <--- เพิ่มบรรทัดนี้
+    plot_checkpoint_performance(model, CONFIG, result_dir, DEVICE)
     
     # --- [STEP 3] GENERATE POST-TRAINING PLOTS ---
     plot_post_training(result_dir, history)
