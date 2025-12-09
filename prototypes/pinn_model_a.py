@@ -8,6 +8,8 @@ import json
 from datetime import datetime
 from scipy.stats import norm
 from tqdm import tqdm
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D # For 3D plotting
 
 # ==========================================
 # INPUT ORDER TO MODEL (ห้ามเปลี่ยน):
@@ -23,7 +25,13 @@ def analytical_solution(S, K, t, r, sigma):
     """
     Calculate Black-Scholes European Call Option Price.
     """
-    t = np.maximum(t, 1e-10) # Avoid div by zero
+    # 1. กันค่า Time เป็น 0
+    t = np.maximum(t, 1e-10) 
+    
+    # 2. กัน S และ K เป็น 0
+    S = np.maximum(S, 1e-10)
+    K = np.maximum(K, 1e-10)
+
     d1 = (np.log(S / K) + (r + 0.5 * sigma ** 2) * t) / (sigma * np.sqrt(t))
     d2 = d1 - sigma * np.sqrt(t)
     return S * norm.cdf(d1) - K * np.exp(-r * t) * norm.cdf(d2)
@@ -38,10 +46,329 @@ def calculate_smape(true, pred):
     # Avoid division by zero
     return np.mean(diff / (denominator + 1e-8)) * 100
 
+# --- [MODIFIED] Visualization Functions ---
+def plot_pre_training(result_dir, config):
+    """
+    Generate plots that visualize the data distribution BEFORE training starts.
+    Saved in the root result directory.
+    """
+    logging.info("Generating Pre-training visualizations...")
+    
+    # Extract Configs
+    user_std_factor = config["sampling"]["adaptive_std"]
+    m_min, m_max = config["sampling"]["moneyness_range"]
+    
+    # --- [CRITICAL UPDATE] Dynamic Sigma Calculation ---
+    # Formula: Real_Sigma = (Range_Width / 6) * User_Factor
+    # Div by 6 because +/- 3SD (total 6SD) covers 99.7% of a standard bell curve.
+    range_width = m_max - m_min
+    std_val = (range_width / 6.0) * user_std_factor
+    
+    # --- Plot 1: Moneyness Density & Zones ---
+    plt.figure(figsize=(12, 7))
+    
+    # X range: Use the config range directly to see how it fits
+    x = np.linspace(m_min, m_max, 1000)
+    mu = 1.0 # Always fixed at ATM for Financial Accuracy
+    y = norm.pdf(x, mu, std_val)
+    max_y = np.max(y)
+    
+    # Plot Main Line
+    plt.plot(x, y, color='#333333', linewidth=2.5, label=rf'PDF (Effective $\sigma$={std_val:.4f})', zorder=10)
+    
+    zones = [
+        (0, 1, '#2ca02c', 0.45),   # Green (Core)
+        (1, 2, '#ff7f0e', 0.15),   # Orange
+        (2, 3, '#d62728', 0.04),   # Red
+        (3, 10, '#999999', 0.0)    # Grey (Tail)
+    ]
+    
+    zone_stats = []
+    # Dynamic Y-Limit based on peak height
+    plt.ylim(bottom=-max_y*0.1, top=max_y * 1.2) 
+
+    for start_sd, end_sd, color, h_ratio in zones:
+        prob_one_side = norm.cdf(end_sd) - norm.cdf(start_sd)
+        pct_band_total = prob_one_side * 2 * 100
+        
+        label_txt = rf"{start_sd}-{end_sd}$\sigma$" if end_sd <= 3 else rf">{start_sd}$\sigma$ (Tails)"
+        zone_stats.append((label_txt, pct_band_total, color))
+
+        # --- Draw Right Side ---
+        right_start = mu + start_sd * std_val
+        right_end = mu + end_sd * std_val
+        
+        # Clip plotting to visible range
+        plot_start = max(right_start, m_min)
+        plot_end = min(right_end, m_max)
+        
+        if plot_start < plot_end:
+            x_fill = np.linspace(plot_start, plot_end, 200)
+            y_fill = norm.pdf(x_fill, mu, std_val)
+            plt.fill_between(x_fill, y_fill, color=color, alpha=0.6)
+            
+            # Text Label
+            if end_sd <= 3:
+                text_x = (plot_start + plot_end) / 2
+                text_y = norm.pdf(text_x, mu, std_val) * h_ratio
+                if m_min < text_x < m_max:
+                    plt.text(text_x, text_y, f"{prob_one_side*100:.1f}%", 
+                             color='white' if start_sd < 1 else 'black', 
+                             ha='center', va='center', fontsize=9, fontweight='bold')
+
+        # --- Draw Left Side ---
+        left_start = mu - start_sd * std_val
+        left_end = mu - end_sd * std_val
+        
+        plot_start = max(left_end, m_min)
+        plot_end = min(left_start, m_max)
+        
+        if plot_start < plot_end:
+            x_fill = np.linspace(plot_start, plot_end, 200)
+            y_fill = norm.pdf(x_fill, mu, std_val)
+            plt.fill_between(x_fill, y_fill, color=color, alpha=0.6)
+            
+            if end_sd <= 3:
+                text_x = (plot_start + plot_end) / 2
+                text_y = norm.pdf(text_x, mu, std_val) * h_ratio
+                if m_min < text_x < m_max:
+                    plt.text(text_x, text_y, f"{prob_one_side*100:.1f}%", 
+                             color='white' if start_sd < 1 else 'black', 
+                             ha='center', va='center', fontsize=9, fontweight='bold')
+
+    # Axis Labels
+    label_y_pos = -max_y * 0.06
+    for i in range(1, 4):
+        # Right SD markers
+        sd_pos_r = mu + i*std_val
+        if m_min < sd_pos_r < m_max:
+            plt.axvline(sd_pos_r, color='grey', linestyle=':', alpha=0.5, linewidth=1)
+            plt.text(sd_pos_r, label_y_pos, rf"+{i}$\sigma$", ha='center', color='#333333', fontsize=9)
+        
+        # Left SD markers
+        sd_pos_l = mu - i*std_val
+        if m_min < sd_pos_l < m_max:
+            plt.axvline(sd_pos_l, color='grey', linestyle=':', alpha=0.5, linewidth=1)
+            plt.text(sd_pos_l, label_y_pos, rf"-{i}$\sigma$", ha='center', color='#333333', fontsize=9)
+
+    # ATM Marker (Always show)
+    plt.text(mu, label_y_pos, rf"$\mu$", ha='center', color='black', fontsize=10, fontweight='bold')
+    plt.axvline(mu, color='black', linestyle='--', alpha=0.3, linewidth=1)
+
+    # Legend
+    from matplotlib.patches import Patch
+    legend_elements = [Patch(facecolor=c, edgecolor='w', label=f'{lbl}: {val:.2f}%') for lbl, val, c in zone_stats]
+    plt.legend(handles=legend_elements, loc='upper right', title=f"Data Distribution (Total 100%)", framealpha=0.95)
+    
+    plt.title(f'Probability Density & Zones (Adaptive Factor={user_std_factor}, Range Width={range_width:.2f})', fontsize=14, pad=20)
+    plt.xlabel('Moneyness (S/K)')
+    plt.ylabel('Probability Density')
+    plt.tight_layout()
+    plt.savefig(os.path.join(result_dir, "moneyness_density_zones.png"))
+    plt.close()
+
+    # --- Plot 2: Data Sampling Distribution ---
+    fix_K_mid = (config["market"]["K_range"][0] + config["market"]["K_range"][1]) / 2
+    fix_K = np.round(fix_K_mid / config["market"]["K_step"]) * config["market"]["K_step"]
+    
+    n_data = config["training"]["n_sample_data"]
+    n_pde = n_data * config["training"]["n_sample_pde_multiplier"]
+    total_points = n_pde + n_data + (n_data*2)
+
+    plt.figure(figsize=(12, 8))
+    
+    # 1. PDE (Grey)
+    t_pde = np.random.uniform(config["market"]["t_range"][0], config["market"]["t_range"][1], n_pde)
+    S_pde = fix_K * np.clip(np.random.normal(1.0, std_val, n_pde), m_min, m_max)
+    plt.scatter(t_pde, S_pde, c='#cccccc', s=10, alpha=0.4, label='PDE Collocation Points')
+    
+    # 2. IVP (Blue)
+    t_ivp = np.zeros(n_data)
+    S_ivp = fix_K * np.clip(np.random.normal(1.0, std_val, n_data), m_min, m_max)
+    plt.scatter(t_ivp, S_ivp, c='blue', s=20, alpha=0.6, label='IVP (t=0)')
+
+    # 3. BVP Upper (Green)
+    t_bvp2 = np.random.uniform(config["market"]["t_range"][0], config["market"]["t_range"][1], n_data)
+    S_bvp2 = np.full(n_data, fix_K * m_max)
+    plt.scatter(t_bvp2, S_bvp2, c='green', marker='x', s=25, alpha=0.6, label=f'BVP Upper (S={fix_K * m_max:.0f})')
+
+    # 4. BVP Lower (Red)
+    t_bvp1 = np.random.uniform(config["market"]["t_range"][0], config["market"]["t_range"][1], n_data)
+    S_bvp1 = np.full(n_data, fix_K * m_min)
+    plt.scatter(t_bvp1, S_bvp1, c='red', marker='x', s=25, alpha=0.6, label=f'BVP Lower (S={fix_K * m_min:.0f})')
+
+    plt.axhline(fix_K, color='black', linestyle='--', linewidth=1.5, alpha=0.5, label=f'Strike K={fix_K:,.0f}')
+    
+    plt.title(rf'Data Sampling Distribution (Effective $\sigma$={std_val:.4f})', fontsize=14)
+    plt.xlabel('Time to Maturity (t)')
+    plt.ylabel('Spot Price (S)')
+    
+    info_text = (f"Point Counts (Total: {total_points:,}):\n"
+                 f"PDE: {n_pde:,}\n"
+                 f"IVP: {n_data:,}\n"
+                 f"BVP: {n_data*2:,}")
+    plt.text(0.02, 0.98, info_text, transform=plt.gca().transAxes, 
+             fontsize=10, va='top', bbox=dict(facecolor='white', alpha=0.9))
+
+    plt.legend(loc='center right', framealpha=0.95)
+    plt.grid(True, linestyle='--', alpha=0.5)
+    plt.tight_layout()
+    plt.savefig(os.path.join(result_dir, "data_sampling_distribution.png"))
+    plt.close()
+
+
+def plot_checkpoint_performance(model, config, save_dir, device):
+    """
+    Generate 3D Surface and Scatter plots for model validation.
+    """
+    model.eval()
+    
+    # Extract params
+    fix_sig = config["validation_params"]["fix_sigma"]
+    fix_r = config["validation_params"]["fix_r"]
+    
+    # Fix K (Mid range)
+    k_min, k_max = config["market"]["K_range"]
+    k_step = config["market"]["K_step"]
+    fix_K = np.round(((k_min + k_max) / 2) / k_step) * k_step
+    
+    m_min, m_max = config["sampling"]["moneyness_range"]
+    t_min, t_max = config["market"]["t_range"]
+    
+    # Generate Grid for 3D Plot
+    S_plot = np.linspace(fix_K * m_min, fix_K * m_max, 50)
+    t_plot = np.linspace(t_min, t_max, 50)
+    S_grid, t_grid = np.meshgrid(S_plot, t_plot)
+    
+    # Prepare Input
+    X_flat = np.zeros((S_grid.size, 5))
+    X_flat[:, 0] = t_grid.flatten() # t
+    X_flat[:, 1] = S_grid.flatten() # S
+    X_flat[:, 2] = fix_sig         # sigma
+    X_flat[:, 3] = fix_r           # r
+    X_flat[:, 4] = fix_K           # K
+    
+    # Normalization
+    c_m = config["market"]
+    t_norm = (X_flat[:, 0] - c_m["t_range"][0]) / (c_m["t_range"][1] - c_m["t_range"][0])
+    S_norm = (X_flat[:, 1] - c_m["S_range"][0]) / (c_m["S_range"][1] - c_m["S_range"][0])
+    sig_norm = (X_flat[:, 2] - c_m["sigma_range"][0]) / (c_m["sigma_range"][1] - c_m["sigma_range"][0])
+    r_norm = (X_flat[:, 3] - c_m["r_range"][0]) / (c_m["r_range"][1] - c_m["r_range"][0])
+    K_norm = (X_flat[:, 4] - c_m["K_range"][0]) / (c_m["K_range"][1] - c_m["K_range"][0])
+    
+    X_tensor = torch.tensor(np.stack([t_norm, S_norm, sig_norm, r_norm, K_norm], axis=1), dtype=torch.float32).to(device)
+    
+    with torch.no_grad():
+        V_pred_norm = model(X_tensor).cpu().numpy().flatten()
+        
+    # Scaling back (Output of model is V/K)
+    V_pred = V_pred_norm * fix_K
+    V_pred_grid = V_pred.reshape(S_grid.shape)
+    
+    # Analytical Solution
+    V_true = analytical_solution(S_grid, fix_K, t_grid, fix_r, fix_sig)
+    
+    # --- Plot 1: 3D Surface Comparison ---
+    fig = plt.figure(figsize=(14, 7))
+    
+    param_text = rf"Fixed Parameters: $\sigma={fix_sig}, r={fix_r}, K={fix_K:,.0f}$"
+    fig.suptitle(f"3D Surface Comparison\n({param_text})", fontsize=14)
+    
+    ax1 = fig.add_subplot(121, projection='3d')
+    surf1 = ax1.plot_surface(t_grid, S_grid, V_true, cmap='viridis', edgecolor='none', alpha=0.9)
+    ax1.set_title('Analytical Solution', fontsize=12)
+    ax1.set_xlabel('Time (t)')
+    ax1.set_ylabel('Spot Price (S)')
+    ax1.set_zlabel('Option Price (V)')
+    
+    ax2 = fig.add_subplot(122, projection='3d')
+    surf2 = ax2.plot_surface(t_grid, S_grid, V_pred_grid, cmap='viridis', edgecolor='none', alpha=0.9)
+    ax2.set_title('PINN Prediction', fontsize=12)
+    ax2.set_xlabel('Time (t)')
+    ax2.set_ylabel('Spot Price (S)')
+    ax2.set_zlabel('Option Price (V)')
+    
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.88)
+    plt.savefig(os.path.join(save_dir, "3d_surface_comparison.png"))
+    plt.close()
+    
+    # --- Plot 2: Scatter Comparison ---
+    plt.figure(figsize=(8, 8))
+    
+    v_true_flat = V_true.flatten()
+    v_pred_flat = V_pred.flatten()
+    
+    plt.scatter(v_pred_flat, v_true_flat, alpha=0.5, s=10, label='Prediction Points')
+    
+    min_val = min(np.min(v_true_flat), np.min(v_pred_flat))
+    max_val = max(np.max(v_true_flat), np.max(v_pred_flat))
+    plt.plot([min_val, max_val], [min_val, max_val], 'r--', linewidth=2, label='Ideal Match (y=x)')
+    
+    rmse = np.sqrt(np.mean((v_true_flat - v_pred_flat)**2))
+    corr = np.corrcoef(v_true_flat, v_pred_flat)[0, 1]
+    
+    plt.title(f'PINN vs. Analytical Predictions\n(RMSE: {rmse:.4f}, Correlation: {corr:.4f})\n{param_text}', fontsize=12)
+    plt.xlabel('PINN Prediction')
+    plt.ylabel('Analytical Solution')
+    plt.legend()
+    plt.grid(True, linestyle='--', alpha=0.5)
+    plt.tight_layout()
+    plt.savefig(os.path.join(save_dir, "scatter_comparison.png"))
+    plt.close()
+
+def plot_post_training(result_dir, history):
+    """
+    Generate loss curves AFTER training is complete.
+    Saved in the root result directory.
+    """
+    logging.info("Generating Post-training visualizations...")
+    plot_dir = result_dir # Save in root
+    
+    if len(history['total']) > 0:
+        epochs = range(1, len(history['total']) + 1)
+        
+        # --- Plot 1: Detailed Curves (Linear Scale) ---
+        fig, axes = plt.subplots(6, 1, figsize=(12, 18), sharex=True)
+        
+        def plot_metric(ax, data, color, label, title, y_label):
+            ax.plot(epochs, data, color=color, label=label, linewidth=1.0)
+            ax.set_ylabel(y_label)
+            ax.grid(True, which="both", ls="-", alpha=0.2)
+            ax.legend(loc='upper right')
+            ax.set_title(title, fontsize=10, pad=2)
+
+        plot_metric(axes[0], history['total'], '#1f77b4', 'Total Loss', 'Total Loss', 'Loss')
+        plot_metric(axes[1], history['pde'], '#ff7f0e', 'PDE Loss', 'Physics (PDE) Loss', 'PDE Loss')
+        plot_metric(axes[2], history['data'], '#2ca02c', 'Data Loss', 'Total Data Loss (IVP + BVP)', 'Data Loss')
+        plot_metric(axes[3], history['ivp'], '#d62728', 'IVP Loss', 'Initial Value Problem (t=0) Loss', 'IVP Loss')
+        plot_metric(axes[4], history['bvp1'], '#9467bd', 'BVP1 Loss', 'Lower Boundary Loss', 'BVP1 Loss')
+        plot_metric(axes[5], history['bvp2'], '#8c564b', 'BVP2 Loss', 'Upper Boundary Loss', 'BVP2 Loss')
+
+        axes[-1].set_xlabel('Epoch')
+        fig.suptitle('Detailed Training Curves (Linear Scale)', fontsize=16)
+        plt.tight_layout(rect=[0, 0.03, 1, 0.97])
+        plt.savefig(os.path.join(plot_dir, "detailed_training_curves.png"))
+        plt.close()
+        
+        # --- Plot 2: Total Loss Only (Standalone) ---
+        plt.figure(figsize=(10, 6))
+        plt.plot(epochs, history['total'], color='#d62728', linewidth=1.5, label='Total Loss')
+        plt.title('Total Loss Curve')
+        plt.xlabel('Epoch')
+        plt.ylabel('Total Loss')
+        plt.grid(True, which="both", ls="--", alpha=0.5)
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(os.path.join(plot_dir, "total_loss_curve.png"))
+        plt.close()
+
+# --- Main Logic ---
+
 def main():
     # --- 2. Setup Directory & Logging ---
     current_time = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-    run_name = f"train_{current_time}_DynamicBoundaries"
+    run_name = f"train_{current_time}_DynamicBoundaries_Adaptive"
     
     base_output_dir = "runs"
     result_dir = os.path.join(base_output_dir, run_name)
@@ -63,28 +390,35 @@ def main():
         "device": "cuda:0" if torch.cuda.is_available() else "cpu",
         "market": {
             "T_MAX": 0.25,            
-            "S_range": [0.0, 1000000.0], # ใช้สำหรับ Normalization เท่านั้น (Fixed Anchor)
-            "K_range": [10000, 500000.0],
-            "K_step": 1000.0,          # Step การสุ่ม K
-            "t_range": [0.0, 0.25],     # Input t is Time to Maturity
-            "sigma_range": [0.1, 2.5],
-            "r_range": [-0.2, 0.50]
+            "S_range": [0.0, 1000000.0],
+            "K_range": [10000.0, 500000.0],
+            "K_step": 1000.0,
+            "t_range": [0.0, 0.25],
+            "sigma_range": [0.1, 2.0],
+            "r_range": [0.0, 0.15]
         },
         "sampling": {
-            # ใช้ Moneyness กำหนดขอบเขต Dynamic: S
-            "moneyness_range": [0.5, 1.5] 
+            "moneyness_range": [0.0, 2.0],
+            # [CRITICAL] adaptive_std is now a FACTOR.
+            # 1.0 = Standard Bell Curve (Width = 6*Sigma) matches Range Width exactly.
+            "adaptive_std": 1.0 
+        },
+        "validation_params": {
+            "fix_sigma": 0.5,
+            "fix_r": 0.05
         },
         "model": {
             "n_input": 5, "n_output": 1, "n_hidden": 256, "n_layers": 4
         },
         "training": {
             "epochs": 600000,
-            "lr": 1e-4,
+            "lr": 1e-3,
             "n_sample_data": 10000,
             "n_sample_pde_multiplier": 4,
             "physics_loss_weight": 1.0,
             "val_interval": 1000,
-            "n_val_sample": 100000
+            "n_val_sample": 100000,
+            "checkpoint_epochs": 10000
         }
     }
     
@@ -99,7 +433,6 @@ def main():
     c_m = CONFIG["market"]
     c_s = CONFIG["sampling"]
     
-    # Normalization constants (Fixed Global Anchors)
     S_min_norm, S_max_norm = c_m["S_range"] 
     K_min, K_max = c_m["K_range"]
     K_step_val = c_m.get("K_step", 1)
@@ -108,6 +441,16 @@ def main():
     r_min, r_max = c_m["r_range"]
     
     M_min, M_max = c_s["moneyness_range"]
+    
+    # --- [CALCULATE REAL SIGMA] ---
+    # We want 6 * sigma to equal the total range width (if factor is 1.0)
+    # This makes the distribution "Scale Invariant"
+    ADAPTIVE_STD_FACTOR = c_s.get("adaptive_std", 1.0)
+    RANGE_WIDTH = M_max - M_min
+    REAL_STD = (RANGE_WIDTH / 6.0) * ADAPTIVE_STD_FACTOR
+    
+    logging.info(f"Moneyness Range: [{M_min}, {M_max}] (Width: {RANGE_WIDTH})")
+    logging.info(f"Adaptive Factor: {ADAPTIVE_STD_FACTOR} => Calculated Real Sigma: {REAL_STD:.6f}")
 
     # --- 4. Normalization Utilities ---
     def normalize_val(val, v_min, v_max):
@@ -120,113 +463,75 @@ def main():
     def get_discrete_K(n, k_min, k_max, step):
         if step is None or step <= 0:
             return np.random.uniform(k_min, k_max, (n, 1))
-            
         aligned_min = np.ceil(k_min / step) * step
         aligned_max = np.floor(k_max / step) * step
-        
         if aligned_max < aligned_min:
             return np.random.uniform(k_min, k_max, (n, 1))
-            
         n_steps = int((aligned_max - aligned_min) / step)
         random_steps = np.random.randint(0, n_steps + 1, (n, 1))
         return aligned_min + random_steps * step
 
-    # --- 5. Data Generation Functions (Dynamic Domain) ---
+    # --- 5. Data Generation Functions ---
     def get_diff_data(n):
-        # 1. Sample K (Discrete)
         K_points = get_discrete_K(n, K_min, K_max, K_step_val)
-        
-        # 2. Sample S based on Moneyness (Dynamic Range around K)
-        # S will always be between [moneyness_range]*K
-        moneyness = np.random.uniform(M_min, M_max, (n, 1))
-        S_points = K_points * moneyness
-        
-        # Clip S to ensure it stays within normalization bounds (just in case)
-        S_points = np.clip(S_points, S_min_norm, S_max_norm)
-
-        # 3. Sample Others
+        # Use REAL_STD here for adaptive sampling
+        moneyness = np.clip(np.random.normal(1.0, REAL_STD, (n, 1)), M_min, M_max)
+        S_points = np.clip(K_points * moneyness, S_min_norm, S_max_norm)
         t_points = np.random.uniform(t_min, t_max, (n, 1))
         sigma_points = np.random.uniform(sig_min, sig_max, (n, 1))
         r_points = np.random.uniform(r_min, r_max, (n, 1))
 
-        # 4. Normalize
         t_norm = normalize_val(t_points, t_min, t_max)
         S_norm = normalize_val(S_points, S_min_norm, S_max_norm)
         sig_norm = normalize_val(sigma_points, sig_min, sig_max)
         r_norm = normalize_val(r_points, r_min, r_max)
         K_norm = normalize_val(K_points, K_min, K_max)
-
         return np.concatenate([t_norm, S_norm, sig_norm, r_norm, K_norm], axis=1)
 
     def get_ivp_data(n):
-        # IVP: t=0
         t_points = np.zeros((n, 1))
-        
-        # 1. Sample K
         K_points = get_discrete_K(n, K_min, K_max, K_step_val)
-        
-        # 2. Sample S (Dynamic Range)
-        moneyness = np.random.uniform(M_min, M_max, (n, 1))
-        S_points = K_points * moneyness
-        S_points = np.clip(S_points, S_min_norm, S_max_norm)
-
-        # 3. Others
+        # Use REAL_STD here for adaptive sampling
+        moneyness = np.clip(np.random.normal(1.0, REAL_STD, (n, 1)), M_min, M_max)
+        S_points = np.clip(K_points * moneyness, S_min_norm, S_max_norm)
         sigma_points = np.random.uniform(sig_min, sig_max, (n, 1))
         r_points = np.random.uniform(r_min, r_max, (n, 1))
 
-        # 4. Normalize
         t_norm = normalize_val(t_points, t_min, t_max)
         S_norm = normalize_val(S_points, S_min_norm, S_max_norm)
         sig_norm = normalize_val(sigma_points, sig_min, sig_max)
         r_norm = normalize_val(r_points, r_min, r_max)
         K_norm = normalize_val(K_points, K_min, K_max)
-
         X_norm = np.concatenate([t_norm, S_norm, sig_norm, r_norm, K_norm], axis=1)
-        
-        # Payoff: max(S-K, 0)
         y_val = np.fmax(S_points - K_points, 0)
         return X_norm, y_val / K_points
 
     def get_bvp_data(n):
-        # Time, Sigma, r are random
         t_points = np.random.uniform(t_min, t_max, (n, 1))
         sigma_points = np.random.uniform(sig_min, sig_max, (n, 1))
         r_points = np.random.uniform(r_min, r_max, (n, 1))
-        
-        # Sample K
         K_points = get_discrete_K(n, K_min, K_max, K_step_val)
         
-        # Common Normalizations
         t_norm = normalize_val(t_points, t_min, t_max)
         sig_norm = normalize_val(sigma_points, sig_min, sig_max)
         r_norm = normalize_val(r_points, r_min, r_max)
         K_norm = normalize_val(K_points, K_min, K_max)
 
-        # --- Lower Boundary: S = K * M_min ---
-        S1_points = K_points * M_min 
-        S1_points = np.clip(S1_points, S_min_norm, S_max_norm)
+        # Lower Boundary
+        S1_points = np.clip(K_points * M_min, S_min_norm, S_max_norm)
         S1_norm = normalize_val(S1_points, S_min_norm, S_max_norm)
-        
         X1_norm = np.concatenate([t_norm, S1_norm, sig_norm, r_norm, K_norm], axis=1)
-        
-        # Condition: Value = 0 (Deep OTM)
         y1_val = np.zeros((n, 1))
 
-        # --- Upper Boundary: S = K * M_max ---
-        S2_points = K_points * M_max
-        S2_points = np.clip(S2_points, S_min_norm, S_max_norm)
+        # Upper Boundary
+        S2_points = np.clip(K_points * M_max, S_min_norm, S_max_norm)
         S2_norm = normalize_val(S2_points, S_min_norm, S_max_norm)
-        
         X2_norm = np.concatenate([t_norm, S2_norm, sig_norm, r_norm, K_norm], axis=1)
-        
-        # Condition: Value = S - K*exp(-rt) (Deep ITM approximation)
-        y2_val = (S2_points - K_points * np.exp(-r_points * t_points))
-        # Ensure non-negative (theoretical constraint)
-        y2_val = np.maximum(y2_val, 0) 
+        y2_val = np.maximum(S2_points - K_points * np.exp(-r_points * t_points), 0)
 
         return X1_norm, y1_val / K_points, X2_norm, y2_val / K_points
 
-    # --- 6. Model Definition (With Positive Constraint) ---
+    # --- 6. Model Definition ---
     class UniversalPINN(nn.Module):
         def __init__(self, n_input, n_output, n_hidden, n_layers):
             super().__init__()
@@ -235,13 +540,7 @@ def main():
             for _ in range(n_layers - 1):
                 layers.append(nn.Linear(n_hidden, n_hidden))
                 layers.append(activation)
-            
-            # Last layer
             layers.append(nn.Linear(n_hidden, n_output))
-            
-            # --- [ADDED] Force Positive Output ---
-            # Softplus is a smooth approximation of ReLU: log(1 + exp(x))
-            # It ensures output is always > 0 and differentiable everywhere
             layers.append(nn.Softplus())
             
             for m in self.modules():
@@ -249,7 +548,6 @@ def main():
                     nn.init.xavier_normal_(m.weight)
                     nn.init.zeros_(m.bias)
             self.net = nn.Sequential(*layers)
-            
         def forward(self, x): return self.net(x)
 
     # --- 7. Setup Training ---
@@ -264,21 +562,23 @@ def main():
     optimizer = torch.optim.Adam(model.parameters(), lr=LR)
     loss_fn = nn.MSELoss()
 
-    # --- 7.5 Create Validation Set (Dynamic) ---
-    logging.info("Generating Validation Set (Dynamic Moneyness Range)...")
+    # --- 7.5 Validation Set ---
     n_val = CONFIG["training"]["n_val_sample"]
-    X_val_norm = get_diff_data(n_val) # Uses the same dynamic logic
-    
-    # Denormalize for Validation
+    X_val_norm = get_diff_data(n_val)
     t_val = denormalize_val(X_val_norm[:, 0], t_min, t_max)
     S_val = denormalize_val(X_val_norm[:, 1], S_min_norm, S_max_norm)
     sig_val = denormalize_val(X_val_norm[:, 2], sig_min, sig_max)
     r_val = denormalize_val(X_val_norm[:, 3], r_min, r_max)
     K_val = denormalize_val(X_val_norm[:, 4], K_min, K_max)
-    
     V_val_true = analytical_solution(S_val, K_val, t_val, r_val, sig_val)
     X_val_tensor = torch.from_numpy(X_val_norm).float().to(DEVICE)
     
+    # History
+    history = {'total': [], 'pde': [], 'data': [], 'ivp': [], 'bvp1': [], 'bvp2': []}
+
+    # --- [STEP 1] GENERATE PRE-TRAINING PLOTS ---
+    plot_pre_training(result_dir, CONFIG)
+
     # --- 8. Training Loop ---
     logging.info("\n--- Starting Training ---")
     
@@ -286,7 +586,7 @@ def main():
         model.train()
         optimizer.zero_grad()
         
-        # Data Loss
+        # Losses
         ivp_x, ivp_y = get_ivp_data(N_SAMPLE_DATA)
         ivp_pred = model(torch.from_numpy(ivp_x).float().to(DEVICE))
         loss_ivp = loss_fn(ivp_pred, torch.from_numpy(ivp_y).float().to(DEVICE))
@@ -298,36 +598,42 @@ def main():
         loss_bvp2 = loss_fn(pred_bvp2, torch.from_numpy(bvp_y2).float().to(DEVICE))
         loss_bvp_total = loss_bvp1 + loss_bvp2
         
-        data_loss = loss_ivp + loss_bvp_total
-
-        # Physics Loss
         X_pde_norm = get_diff_data(N_SAMPLE_PDE)
         X_pde_tensor = torch.from_numpy(X_pde_norm).float().to(DEVICE).requires_grad_()
         v_pred_norm = model(X_pde_tensor)
-
+        
+        # PDE logic
         S_pde = denormalize_val(X_pde_tensor[:, 1:2], S_min_norm, S_max_norm)
         sigma_pde = denormalize_val(X_pde_tensor[:, 2:3], sig_min, sig_max)
         r_pde = denormalize_val(X_pde_tensor[:, 3:4], r_min, r_max)
         K_pde = denormalize_val(X_pde_tensor[:, 4:5], K_min, K_max)
         V_real = v_pred_norm * K_pde
-
+        
         grads = torch.autograd.grad(v_pred_norm, X_pde_tensor, grad_outputs=torch.ones_like(v_pred_norm), create_graph=True)[0]
         dv_dt_n, dv_ds_n = grads[:, 0:1], grads[:, 1:2]
         grads2 = torch.autograd.grad(dv_ds_n, X_pde_tensor, grad_outputs=torch.ones_like(dv_ds_n), create_graph=True)[0]
         d2v_ds2_n = grads2[:, 1:2]
-
+        
         dV_dt = (K_pde / (t_max - t_min)) * dv_dt_n
         dV_dS = (K_pde / (S_max_norm - S_min_norm)) * dv_ds_n
         d2V_dS2 = (K_pde / (S_max_norm - S_min_norm)**2) * d2v_ds2_n
-
+        
         pde_res = dV_dt - (0.5 * sigma_pde**2 * S_pde**2 * d2V_dS2 + r_pde * S_pde * dV_dS - r_pde * V_real)
         pde_loss = PHYSICS_WEIGHT * loss_fn(pde_res / K_pde, torch.zeros_like(pde_res))
-
+        
+        data_loss = loss_ivp + loss_bvp_total
         total_loss = data_loss + pde_loss
         total_loss.backward()
         optimizer.step()
 
-        # --- C. Logging (TensorBoard) ---
+        # Record History
+        history['total'].append(total_loss.item())
+        history['pde'].append(pde_loss.item())
+        history['data'].append(data_loss.item())
+        history['ivp'].append(loss_ivp.item())
+        history['bvp1'].append(loss_bvp1.item())
+        history['bvp2'].append(loss_bvp2.item())
+
         if i % 10 == 0:
             writer.add_scalar('Loss/Total', total_loss.item(), i)
             writer.add_scalar('Loss/PDE', pde_loss.item(), i)
@@ -337,62 +643,55 @@ def main():
             writer.add_scalar('Loss_Detail/BVP1_Min', loss_bvp1.item(), i)
             writer.add_scalar('Loss_Detail/BVP2_Max', loss_bvp2.item(), i)
 
-        # --- D. Validation Metrics (Adjusted to Ratio Scale) ---
+        # Validation Log
         if (i + 1) % CONFIG["training"]["val_interval"] == 0:
             model.eval()
             with torch.no_grad():
-                # 1. Prediction (V/K)
                 v_val_pred_ratio = model(X_val_tensor).cpu().numpy().flatten()
-                
-                # 2. Ground Truth (Convert V -> V/K)
                 v_val_true_ratio = V_val_true.flatten() / K_val.flatten()
-                
-                # 3. Calculate Metrics on Ratio Scale (0.0 - 1.0+)
                 diff_ratio = v_val_pred_ratio - v_val_true_ratio
-                
                 rmse_r = np.sqrt(np.mean(diff_ratio**2))
-                mae_r = np.mean(np.abs(diff_ratio))
-                max_err_r = np.max(np.abs(diff_ratio))
-                bias_r = np.mean(diff_ratio)
-                
-                # Handle Correlation
-                if np.std(v_val_true_ratio) == 0 or np.std(v_val_pred_ratio) == 0:
-                    r_val = 0.0
-                else:
-                    r_val = np.corrcoef(v_val_true_ratio, v_val_pred_ratio)[0, 1]
-                    
                 smape_r = calculate_smape(v_val_true_ratio, v_val_pred_ratio)
-
+                
                 # Log to TensorBoard
                 writer.add_scalar('Metrics_Ratio/RMSE', rmse_r, i)
-                writer.add_scalar('Metrics_Ratio/MAE', mae_r, i)
                 writer.add_scalar('Metrics_Ratio/SMAPE', smape_r, i)
-                writer.add_scalar('Metrics_Ratio/Bias', bias_r, i)
-                writer.add_scalar('Metrics_Ratio/R', r_val, i)
-                writer.add_scalar('Metrics_Ratio/Max_Error', max_err_r, i)
-                
-                # Log to Text File
+
                 log_msg = (
                     f"Epoch {i+1:5d} | "
                     f"Loss: {total_loss.item():.12f} (PDE:{pde_loss.item():.12f} Data:{data_loss.item():.12f}) | "
-                    f"Val(Ratio): [RMSE:{rmse_r:.4f} MAE:{mae_r:.4f} SMAPE:{smape_r:.2f}% Bias:{bias_r:.4f} R:{r_val:.4f} MaxErr:{max_err_r:.4f}]"
+                    f"Val(Ratio): [RMSE:{rmse_r:.4f} SMAPE:{smape_r:.2f}%]"
                 )
                 logging.info(log_msg)
-                
-        if (i + 1) % 10000 == 0:
-            filename = f"checkpoint_epoch_{i+1}.pth"
-            torch.save(model.state_dict(), os.path.join(result_dir, filename))
-            print(f"Saved checkpoint: {filename}")
-                    
+        
+        # --- [STEP 2] CHECKPOINT & PLOTS ---
+        
+        if (i + 1) % CONFIG["training"]["checkpoint_epochs"] == 0:
+            # Create checkpoint folder
+            ckpt_dir = os.path.join(result_dir, "checkpoints", f"epoch_{i+1}")
+            os.makedirs(ckpt_dir, exist_ok=True)
+            
+            # Save Model
+            torch.save(model.state_dict(), os.path.join(ckpt_dir, "model.pth"))
+            
+            # Save Checkpoint Plots (3D & Scatter)
+            plot_checkpoint_performance(model, CONFIG, ckpt_dir, DEVICE)
+            
+            print(f"Saved checkpoint and plots to: {ckpt_dir}")
             model.train()
 
     logging.info("--- Training Finished ---")
     writer.close()
 
-    # --- 8. Save Model ---
-    model_save_path = os.path.join(result_dir, "model.pth")
-    torch.save(model.state_dict(), model_save_path)
-    logging.info(f"Model saved to: {model_save_path}")
+    # --- 9. Final Save ---
+    torch.save(model.state_dict(), os.path.join(result_dir, "model.pth"))
+    
+    # [ADDED] Plot performance for the final model as well
+    logging.info("Generating Final Performance Plots...")
+    plot_checkpoint_performance(model, CONFIG, result_dir, DEVICE) # <--- เพิ่มบรรทัดนี้
+    
+    # --- [STEP 3] GENERATE POST-TRAINING PLOTS ---
+    plot_post_training(result_dir, history)
 
 if __name__ == "__main__":
     if torch.cuda.is_available():
