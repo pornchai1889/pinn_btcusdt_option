@@ -14,11 +14,11 @@ from scipy.stats import norm
 # ==========================================
 # CONFIGURATION
 # ==========================================
-# 1. โฟลเดอร์ผลลัพธ์การเทรน
-RUN_FOLDER = "runs/train_2025-12-07_08-17-11_DynamicBoundaries/fine_tune/ft_2025-12-08_09-01-39"  
+# 1. โฟลเดอร์ผลลัพธ์การเทรน (ระบุถึงโฟลเดอร์ Checkpoint ที่ต้องการเทส)
+RUN_FOLDER = "runs/train_2025-12-09_14-18-05_DynamicBoundaries_Adaptive/checkpoints/epoch_40000"  
 
 # 2. ชื่อโมเดลที่ต้องการโหลดมาใช้งาน
-MODELL = "checkpoint_epoch_190000.pth"
+MODELL = "model.pth"
 
 # 3. โหมดการรันและการตั้งค่าไฟล์
 # "BATCH"  = รันทุกไฟล์ในโฟลเดอร์ data/raw
@@ -26,7 +26,7 @@ MODELL = "checkpoint_epoch_190000.pth"
 RUN_MODE = "BATCH" 
 
 DATA_RAW_DIR = "data/raw"
-SINGLE_TARGET_FILE = "BTC-250919-115000-C_Weekly_2h.csv" # ใช้เมื่อ RUN_MODE = "SINGLE"
+SINGLE_TARGET_FILE = "BTC-251206-89000-C_Daily_30m.csv" # ใช้เมื่อ RUN_MODE = "SINGLE"
 
 # 4. ค่า r มาตรฐาน
 RISK_FREE_RATE = 0.05
@@ -334,11 +334,33 @@ def main():
 
     print(f"--- Testing Real Market Data (Mode: {RUN_MODE}) ---")
     
-    # 2. Load Config & Model
-    config_path = os.path.join(RUN_FOLDER, "config.json")
-    if not os.path.exists(config_path):
-        print(f"Error: Config not found at {config_path}")
+    # ==========================================
+    # 2. [UPDATED] Load Config from Run Root
+    # ==========================================
+    # Logic: Start from RUN_FOLDER (checkpoints/epoch_X) and search UPWARDS for config.json
+    # This makes it general for any sub-folder depth.
+    
+    config_path = None
+    current_search_dir = RUN_FOLDER
+    
+    # Traverse up (Limit to 5 levels to be safe)
+    for _ in range(5): 
+        candidate_path = os.path.join(current_search_dir, "config.json")
+        if os.path.exists(candidate_path):
+            config_path = candidate_path
+            break
+        
+        # Move up one level
+        parent_dir = os.path.dirname(current_search_dir)
+        if parent_dir == current_search_dir: # Reached System Root
+            break
+        current_search_dir = parent_dir
+    
+    if config_path is None:
+        print(f"Error: 'config.json' not found in hierarchy starting from: {RUN_FOLDER}")
         return
+
+    print(f"Loaded Config from: {config_path}")
 
     with open(config_path, 'r') as f:
         TRAIN_CONFIG = json.load(f)
@@ -349,10 +371,19 @@ def main():
         TRAIN_CONFIG["model"]["n_hidden"], TRAIN_CONFIG["model"]["n_layers"]
     ).to(device)
     
+    # Model is typically inside the specific checkpoint folder (RUN_FOLDER)
     model_path = os.path.join(RUN_FOLDER, MODELL)
-    if not os.path.exists(model_path): model_path = os.path.join(RUN_FOLDER, "model.pth")
-    model.load_state_dict(torch.load(model_path, map_location=device))
-    model.eval()
+    if not os.path.exists(model_path): 
+        # Fallback in case user put model elsewhere or generic name
+        model_path = os.path.join(RUN_FOLDER, "model.pth")
+        
+    if os.path.exists(model_path):
+        print(f"Loading Model from: {model_path}")
+        model.load_state_dict(torch.load(model_path, map_location=device))
+        model.eval()
+    else:
+        print(f"Error: Model file '{MODELL}' not found in {RUN_FOLDER}")
+        return
 
     # --- Setup Output Directory Logic ---
     model_name_clean = os.path.splitext(MODELL)[0]
@@ -361,7 +392,8 @@ def main():
     if RUN_MODE == "BATCH":
         # ตั้งชื่อโฟลเดอร์: eval_batch_{Date}_{Model} (เพื่อให้เรียงตามเวลาได้ง่าย)
         folder_name = f"eval_batch_{now_str}__{model_name_clean}"
-        output_dir = os.path.join(RUN_FOLDER, "evaluation_results", folder_name)
+        # Save results inside the Checkpoint folder (keep original logic)
+        output_dir = os.path.join(RUN_FOLDER, folder_name)
         os.makedirs(output_dir, exist_ok=True)
         print(f"Batch Output Directory: {output_dir}")
         
