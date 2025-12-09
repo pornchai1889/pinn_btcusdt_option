@@ -15,7 +15,7 @@ from scipy.stats import norm
 # CONFIGURATION
 # ==========================================
 # 1. โฟลเดอร์ผลลัพธ์การเทรน (ระบุถึงโฟลเดอร์ Checkpoint ที่ต้องการเทส)
-RUN_FOLDER = "runs/train_2025-12-09_14-18-05_DynamicBoundaries_Adaptive/checkpoints/epoch_40000"  
+RUN_FOLDER = "runs/train_2025-12-09_18-18-46_PowerLawTime_Adaptive/checkpoints/epoch_30000"  
 
 # 2. ชื่อโมเดลที่ต้องการโหลดมาใช้งาน
 MODELL = "model.pth"
