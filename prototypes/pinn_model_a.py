@@ -289,8 +289,8 @@ def plot_checkpoint_performance(model, config, save_dir, device):
     t_min, t_max = config["market"]["t_range"]
     
     # Generate Grid for 3D Plot
-    S_plot = np.linspace(fix_K * m_min, fix_K * m_max, 50)
-    t_plot = np.linspace(t_min, t_max, 50)
+    S_plot = np.linspace(fix_K * m_min, fix_K * m_max, 100)
+    t_plot = np.linspace(t_min, t_max, 100)
     S_grid, t_grid = np.meshgrid(S_plot, t_plot)
     
     # Prepare Input
@@ -647,118 +647,150 @@ def main():
     # --- 8. Training Loop ---
     logging.info("\n--- Starting Training ---")
     
-    for i in tqdm(range(EPOCHS), desc="Training PINN", unit="epoch"):
-        model.train()
-        optimizer.zero_grad()
-        
-        # Losses
-        ivp_x, ivp_y = get_ivp_data(N_SAMPLE_DATA)
-        ivp_pred = model(torch.from_numpy(ivp_x).float().to(DEVICE))
-        loss_ivp = loss_fn(ivp_pred, torch.from_numpy(ivp_y).float().to(DEVICE))
-
-        bvp_x1, bvp_y1, bvp_x2, bvp_y2 = get_bvp_data(N_SAMPLE_DATA)
-        pred_bvp1 = model(torch.from_numpy(bvp_x1).float().to(DEVICE))
-        pred_bvp2 = model(torch.from_numpy(bvp_x2).float().to(DEVICE))
-        loss_bvp1 = loss_fn(pred_bvp1, torch.from_numpy(bvp_y1).float().to(DEVICE))
-        loss_bvp2 = loss_fn(pred_bvp2, torch.from_numpy(bvp_y2).float().to(DEVICE))
-        loss_bvp_total = loss_bvp1 + loss_bvp2
-        
-        X_pde_norm = get_diff_data(N_SAMPLE_PDE)
-        X_pde_tensor = torch.from_numpy(X_pde_norm).float().to(DEVICE).requires_grad_()
-        v_pred_norm = model(X_pde_tensor)
-        
-        # PDE logic
-        S_pde = denormalize_val(X_pde_tensor[:, 1:2], S_min_norm, S_max_norm)
-        sigma_pde = denormalize_val(X_pde_tensor[:, 2:3], sig_min, sig_max)
-        r_pde = denormalize_val(X_pde_tensor[:, 3:4], r_min, r_max)
-        K_pde = denormalize_val(X_pde_tensor[:, 4:5], K_min, K_max)
-        V_real = v_pred_norm * K_pde
-        
-        grads = torch.autograd.grad(v_pred_norm, X_pde_tensor, grad_outputs=torch.ones_like(v_pred_norm), create_graph=True)[0]
-        dv_dt_n, dv_ds_n = grads[:, 0:1], grads[:, 1:2]
-        grads2 = torch.autograd.grad(dv_ds_n, X_pde_tensor, grad_outputs=torch.ones_like(dv_ds_n), create_graph=True)[0]
-        d2v_ds2_n = grads2[:, 1:2]
-        
-        dV_dt = (K_pde / (t_max - t_min)) * dv_dt_n
-        dV_dS = (K_pde / (S_max_norm - S_min_norm)) * dv_ds_n
-        d2V_dS2 = (K_pde / (S_max_norm - S_min_norm)**2) * d2v_ds2_n
-        
-        pde_res = dV_dt - (0.5 * sigma_pde**2 * S_pde**2 * d2V_dS2 + r_pde * S_pde * dV_dS - r_pde * V_real)
-        pde_loss = PHYSICS_WEIGHT * loss_fn(pde_res / K_pde, torch.zeros_like(pde_res))
-        
-        data_loss = loss_ivp + loss_bvp_total
-        total_loss = data_loss + pde_loss
-        total_loss.backward()
-        optimizer.step()
-
-        # Record History
-        history['total'].append(total_loss.item())
-        history['pde'].append(pde_loss.item())
-        history['data'].append(data_loss.item())
-        history['ivp'].append(loss_ivp.item())
-        history['bvp1'].append(loss_bvp1.item())
-        history['bvp2'].append(loss_bvp2.item())
-
-        if i % 10 == 0:
-            writer.add_scalar('Loss/Total', total_loss.item(), i)
-            writer.add_scalar('Loss/PDE', pde_loss.item(), i)
-            writer.add_scalar('Loss/Data_Total', data_loss.item(), i)
-            writer.add_scalar('Loss_Detail/IVP', loss_ivp.item(), i)
-            writer.add_scalar('Loss_Detail/BVP_Total', loss_bvp_total.item(), i)
-            writer.add_scalar('Loss_Detail/BVP1_Min', loss_bvp1.item(), i)
-            writer.add_scalar('Loss_Detail/BVP2_Max', loss_bvp2.item(), i)
-
-        # Validation Log
-        if (i + 1) % CONFIG["training"]["val_interval"] == 0:
-            model.eval()
-            with torch.no_grad():
-                v_val_pred_ratio = model(X_val_tensor).cpu().numpy().flatten()
-                v_val_true_ratio = V_val_true.flatten() / K_val.flatten()
-                
-                # Metrics Calculation
-                diff_ratio = v_val_pred_ratio - v_val_true_ratio
-                rmse_r = np.sqrt(np.mean(diff_ratio**2))
-                smape_r = calculate_smape(v_val_true_ratio, v_val_pred_ratio)
-                
-                # [ADDED] R (Correlation Coefficient)
-                # Compute Pearson correlation matrix
-                corr_matrix = np.corrcoef(v_val_true_ratio, v_val_pred_ratio)
-                # Handle potential NaN if variance is 0 (rare but safe to handle)
-                r_score = corr_matrix[0, 1] if not np.isnan(corr_matrix[0, 1]) else 0.0
-                
-                # Log to TensorBoard
-                writer.add_scalar('Metrics_Ratio/RMSE', rmse_r, i)
-                writer.add_scalar('Metrics_Ratio/SMAPE', smape_r, i)
-                writer.add_scalar('Metrics_Ratio/R', r_score, i)
-
-                log_msg = (
-                    f"Epoch {i+1:5d} | "
-                    f"Loss: {total_loss.item():.12f} (PDE:{data_loss.item():.12f}) (PDE:{pde_loss.item():.12f}) | "
-                    f"Val: [RMSE:{rmse_r:.4f} SMAPE:{smape_r:.2f}% R:{r_score:.4f}]"
-                )
-                logging.info(log_msg)
-        
-        # --- [STEP 2] CHECKPOINT & PLOTS ---
-        if (i + 1) % CONFIG["training"]["checkpoint_epochs"] == 0:
-            ckpt_dir = os.path.join(result_dir, "checkpoints", f"epoch_{i+1}")
-            os.makedirs(ckpt_dir, exist_ok=True)
-            
-            torch.save(model.state_dict(), os.path.join(ckpt_dir, "model.pth"))
-            plot_checkpoint_performance(model, CONFIG, ckpt_dir, DEVICE)
-            
-            print(f"Saved checkpoint and plots to: {ckpt_dir}")
+    try:
+        for i in tqdm(range(EPOCHS), desc="Training PINN", unit="epoch"):
             model.train()
+            optimizer.zero_grad()
+            
+            # Losses
+            ivp_x, ivp_y = get_ivp_data(N_SAMPLE_DATA)
+            ivp_pred = model(torch.from_numpy(ivp_x).float().to(DEVICE))
+            loss_ivp = loss_fn(ivp_pred, torch.from_numpy(ivp_y).float().to(DEVICE))
 
-    logging.info("--- Training Finished ---")
-    writer.close()
+            bvp_x1, bvp_y1, bvp_x2, bvp_y2 = get_bvp_data(N_SAMPLE_DATA)
+            pred_bvp1 = model(torch.from_numpy(bvp_x1).float().to(DEVICE))
+            pred_bvp2 = model(torch.from_numpy(bvp_x2).float().to(DEVICE))
+            loss_bvp1 = loss_fn(pred_bvp1, torch.from_numpy(bvp_y1).float().to(DEVICE))
+            loss_bvp2 = loss_fn(pred_bvp2, torch.from_numpy(bvp_y2).float().to(DEVICE))
+            loss_bvp_total = loss_bvp1 + loss_bvp2
+            
+            X_pde_norm = get_diff_data(N_SAMPLE_PDE)
+            X_pde_tensor = torch.from_numpy(X_pde_norm).float().to(DEVICE).requires_grad_()
+            v_pred_norm = model(X_pde_tensor)
+            
+            # PDE logic
+            S_pde = denormalize_val(X_pde_tensor[:, 1:2], S_min_norm, S_max_norm)
+            sigma_pde = denormalize_val(X_pde_tensor[:, 2:3], sig_min, sig_max)
+            r_pde = denormalize_val(X_pde_tensor[:, 3:4], r_min, r_max)
+            K_pde = denormalize_val(X_pde_tensor[:, 4:5], K_min, K_max)
+            V_real = v_pred_norm * K_pde
+            
+            grads = torch.autograd.grad(v_pred_norm, X_pde_tensor, grad_outputs=torch.ones_like(v_pred_norm), create_graph=True)[0]
+            dv_dt_n, dv_ds_n = grads[:, 0:1], grads[:, 1:2]
+            grads2 = torch.autograd.grad(dv_ds_n, X_pde_tensor, grad_outputs=torch.ones_like(dv_ds_n), create_graph=True)[0]
+            d2v_ds2_n = grads2[:, 1:2]
+            
+            dV_dt = (K_pde / (t_max - t_min)) * dv_dt_n
+            dV_dS = (K_pde / (S_max_norm - S_min_norm)) * dv_ds_n
+            d2V_dS2 = (K_pde / (S_max_norm - S_min_norm)**2) * d2v_ds2_n
+            
+            pde_res = dV_dt - (0.5 * sigma_pde**2 * S_pde**2 * d2V_dS2 + r_pde * S_pde * dV_dS - r_pde * V_real)
+            pde_loss = PHYSICS_WEIGHT * loss_fn(pde_res / K_pde, torch.zeros_like(pde_res))
+            
+            data_loss = loss_ivp + loss_bvp_total
+            total_loss = data_loss + pde_loss
+            total_loss.backward()
+            optimizer.step()
 
-    # --- 9. Final Save ---
-    torch.save(model.state_dict(), os.path.join(result_dir, "model.pth"))
-    logging.info("Generating Final Performance Plots...")
-    plot_checkpoint_performance(model, CONFIG, result_dir, DEVICE)
+            # Record History
+            history['total'].append(total_loss.item())
+            history['pde'].append(pde_loss.item())
+            history['data'].append(data_loss.item())
+            history['ivp'].append(loss_ivp.item())
+            history['bvp1'].append(loss_bvp1.item())
+            history['bvp2'].append(loss_bvp2.item())
+
+            if i % 10 == 0:
+                writer.add_scalar('Loss/Total', total_loss.item(), i)
+                writer.add_scalar('Loss/PDE', pde_loss.item(), i)
+                writer.add_scalar('Loss/Data_Total', data_loss.item(), i)
+                writer.add_scalar('Loss_Detail/IVP', loss_ivp.item(), i)
+                writer.add_scalar('Loss_Detail/BVP_Total', loss_bvp_total.item(), i)
+                writer.add_scalar('Loss_Detail/BVP1_Min', loss_bvp1.item(), i)
+                writer.add_scalar('Loss_Detail/BVP2_Max', loss_bvp2.item(), i)
+
+            # Validation Log
+            if (i + 1) % CONFIG["training"]["val_interval"] == 0:
+                model.eval()
+                with torch.no_grad():
+                    v_val_pred_ratio = model(X_val_tensor).cpu().numpy().flatten()
+                    v_val_true_ratio = V_val_true.flatten() / K_val.flatten()
+                    
+                    # Metrics Calculation
+                    diff_ratio = v_val_pred_ratio - v_val_true_ratio
+                    abs_diff = np.abs(diff_ratio)
+                    
+                    rmse_r = np.sqrt(np.mean(diff_ratio**2))
+                    mae_r = np.mean(abs_diff)
+                    bias_r = np.mean(diff_ratio)
+                    max_err_r = np.max(abs_diff)
+                    smape_r = calculate_smape(v_val_true_ratio, v_val_pred_ratio)
+                    
+                    # R (Correlation Coefficient)
+                    corr_matrix = np.corrcoef(v_val_true_ratio, v_val_pred_ratio)
+                    r_score = corr_matrix[0, 1] if not np.isnan(corr_matrix[0, 1]) else 0.0
+                    
+                    # Log to TensorBoard
+                    writer.add_scalar('Metrics_Ratio/RMSE', rmse_r, i)
+                    writer.add_scalar('Metrics_Ratio/MAE', mae_r, i)
+                    writer.add_scalar('Metrics_Ratio/SMAPE', smape_r, i)
+                    writer.add_scalar('Metrics_Ratio/Bias', bias_r, i)
+                    writer.add_scalar('Metrics_Ratio/R', r_score, i)
+                    writer.add_scalar('Metrics_Ratio/Max_Error', max_err_r, i)
+                    
+                    # Log Message
+                    log_msg = (
+                        f"Epoch {i+1:5d} | "
+                        f"Loss: {total_loss.item():.12f} (PDE:{pde_loss.item():.12f} Data:{data_loss.item():.12f}) | "
+                        f"Val(Ratio): [RMSE:{rmse_r:.4f} MAE:{mae_r:.4f} SMAPE:{smape_r:.2f}% "
+                        f"Bias:{bias_r:.4f} R:{r_score:.4f} Max_Err:{max_err_r:.4f}]"
+                    )
+                    logging.info(log_msg)
+            
+            # --- [STEP 2] CHECKPOINT & PLOTS ---
+            if (i + 1) % CONFIG["training"]["checkpoint_epochs"] == 0:
+                ckpt_dir = os.path.join(result_dir, "checkpoints", f"epoch_{i+1}")
+                os.makedirs(ckpt_dir, exist_ok=True)
+                
+                torch.save(model.state_dict(), os.path.join(ckpt_dir, "model.pth"))
+                plot_checkpoint_performance(model, CONFIG, ckpt_dir, DEVICE)
+                
+                print(f"Saved checkpoint and plots to: {ckpt_dir}")
+                model.train()
+
+    except KeyboardInterrupt:
+        logging.warning("\n!!! Training Interrupted by User (Ctrl+C) !!!")
+        logging.info("Attempting to save current model state before exiting...")
     
-    # --- [STEP 3] GENERATE POST-TRAINING PLOTS ---
-    plot_post_training(result_dir, history)
+    except Exception as e:
+        logging.error(f"\n!!! An unexpected error occurred: {e} !!!")
+        raise e
+        
+    finally:
+        # --- 9. Final Save (Executed on Finish, Interrupt, or Error) ---
+        logging.info("--- Saving Final Artifacts ---")
+        writer.close()
+        
+        # Save Model
+        final_model_path = os.path.join(result_dir, "model.pth")
+        torch.save(model.state_dict(), final_model_path)
+        logging.info(f"Model saved to: {final_model_path}")
+        
+        # Plot Performance
+        logging.info("Generating Final Performance Plots...")
+        try:
+            plot_checkpoint_performance(model, CONFIG, result_dir, DEVICE)
+        except Exception as e:
+            logging.error(f"Failed to plot checkpoint performance: {e}")
+            
+        # Plot History
+        logging.info("Generating Loss History Plots...")
+        try:
+            plot_post_training(result_dir, history)
+        except Exception as e:
+            logging.error(f"Failed to plot training history: {e}")
+
+        logging.info("--- Process Complete ---")
 
 if __name__ == "__main__":
     if torch.cuda.is_available():
