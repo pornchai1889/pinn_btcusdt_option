@@ -289,8 +289,8 @@ def plot_checkpoint_performance(model, config, save_dir, device):
     t_min, t_max = config["market"]["t_range"]
     
     # Generate Grid for 3D Plot
-    S_plot = np.linspace(fix_K * m_min, fix_K * m_max, 50)
-    t_plot = np.linspace(t_min, t_max, 50)
+    S_plot = np.linspace(fix_K * m_min, fix_K * m_max, 100)
+    t_plot = np.linspace(t_min, t_max, 100)
     S_grid, t_grid = np.meshgrid(S_plot, t_plot)
     
     # Prepare Input
@@ -717,24 +717,33 @@ def main():
                 
                 # Metrics Calculation
                 diff_ratio = v_val_pred_ratio - v_val_true_ratio
+                abs_diff = np.abs(diff_ratio)
+                
                 rmse_r = np.sqrt(np.mean(diff_ratio**2))
+                mae_r = np.mean(abs_diff)      # [ADDED] MAE
+                bias_r = np.mean(diff_ratio)   # [ADDED] Bias
+                max_err_r = np.max(abs_diff)   # [ADDED] Max Error
                 smape_r = calculate_smape(v_val_true_ratio, v_val_pred_ratio)
                 
-                # [ADDED] R (Correlation Coefficient)
-                # Compute Pearson correlation matrix
+                # R (Correlation Coefficient)
                 corr_matrix = np.corrcoef(v_val_true_ratio, v_val_pred_ratio)
-                # Handle potential NaN if variance is 0 (rare but safe to handle)
                 r_score = corr_matrix[0, 1] if not np.isnan(corr_matrix[0, 1]) else 0.0
                 
                 # Log to TensorBoard
                 writer.add_scalar('Metrics_Ratio/RMSE', rmse_r, i)
+                writer.add_scalar('Metrics_Ratio/MAE', mae_r, i)
                 writer.add_scalar('Metrics_Ratio/SMAPE', smape_r, i)
+                writer.add_scalar('Metrics_Ratio/Bias', bias_r, i)
                 writer.add_scalar('Metrics_Ratio/R', r_score, i)
-
+                writer.add_scalar('Metrics_Ratio/Max_Err', max_err_r, i)
+                
+                # Log Message (Restored Format)
+                # Format: Loss: ... (PDE:... Data:...) | Val(Ratio): [RMSE:... MAE:... SMAPE:... Bias:... R:... MaxErr:...]
                 log_msg = (
                     f"Epoch {i+1:5d} | "
-                    f"Loss: {total_loss.item():.12f} (PDE:{data_loss.item():.12f}) (PDE:{pde_loss.item():.12f}) | "
-                    f"Val: [RMSE:{rmse_r:.4f} SMAPE:{smape_r:.2f}% R:{r_score:.4f}]"
+                    f"Loss: {total_loss.item():.12f} (PDE:{pde_loss.item():.12f} Data:{data_loss.item():.12f}) | "
+                    f"Val(Ratio): [RMSE:{rmse_r:.4f} MAE:{mae_r:.4f} SMAPE:{smape_r:.2f}% "
+                    f"Bias:{bias_r:.4f} R:{r_score:.4f} Max_Err:{max_err_r:.4f}]"
                 )
                 logging.info(log_msg)
         

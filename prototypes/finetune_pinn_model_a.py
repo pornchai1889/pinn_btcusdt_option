@@ -15,18 +15,18 @@ from mpl_toolkits.mplot3d import Axes3D
 # 1. CONFIGURATION FOR FINE-TUNING
 # ==============================================================================
 # ระบุ Path ของ Run เดิมที่จะดึงมาจูน
-BASE_RUN_DIR = "runs/train_2025-12-09_18-18-46_DynamicBoundaries_MixedDist/checkpoints/epoch_390000" 
+BASE_RUN_DIR = "runs/train_2025-12-09_18-18-46_DynamicBoundaries_MixedDist/fine_tune/ft_2025-12-10_13-04-41/checkpoints/epoch_20000" 
 MODEL_NAME = "model.pth" # หรือ checkpoint ที่ต้องการ
 
 CHECKPOINT_EPOCHS = 10000 # จำนวนรอบที่ต้องเซฟโมเดลไว้ (สำรองเผื่อไฟดับ)
 
 # ค่าที่อนุญาตให้ปรับ (นอกนั้นใช้ค่าเดิมจากโมเดลแม่)
 FT_CONFIG = {
-    "epochs": 300000,           # [Adjustable] รอบการจูน
-    "lr": 1e-5,                 # [Adjustable] Learning Rate (ควรต่ำกว่าตอนเทรนแม่)
+    "epochs": 600000,           # [Adjustable] รอบการจูน
+    "lr": 1e-4,                 # [Adjustable] Learning Rate (ควรต่ำกว่าหรือเท่ากับตอนเทรนโมเดลแม่)
     "n_sample_data": 10000,     # [Adjustable] Batch Size
     "n_sample_pde_multiplier": 4, # [Adjustable] สัดส่วน PDE
-    "physics_loss_weight": 1.0, # [Adjustable] ความสำคัญของ Physics
+    "physics_loss_weight": 2.0, # [Adjustable] ความสำคัญของ Physics
     "val_interval": 1000,       # [Adjustable] ความถี่ในการ Validate
     "n_val_samples": 100000,    # [Adjustable] จำนวนจุด Validate
     "K_step": 1000.0,           # [Adjustable] ความละเอียดของ Strike Price
@@ -97,8 +97,8 @@ def plot_checkpoint_performance(model, config, save_dir, device):
     t_min, t_max = config["market"]["t_range"]
     
     # Generate Grid for 3D Plot
-    S_plot = np.linspace(fix_K * m_min, fix_K * m_max, 50)
-    t_plot = np.linspace(t_min, t_max, 50)
+    S_plot = np.linspace(fix_K * m_min, fix_K * m_max, 100)
+    t_plot = np.linspace(t_min, t_max, 100)
     S_grid, t_grid = np.meshgrid(S_plot, t_plot)
     
     # Prepare Input
@@ -265,18 +265,28 @@ def main():
         MOTHER_CONFIG["sampling"]["time_sampling_power"] = FT_CONFIG["time_sampling_power"]
 
     # --- 2. Setup Directory (Universal Path Logic) ---
-    # Logic: Avoid nested fine_tune folders
-    normalized_base_path = BASE_RUN_DIR.replace("\\", "/")
+    # [UPDATED] Logic: Always save fine_tune folder at the ROOT of the Main Experiment
+    # This prevents nested hell (e.g. runs/Exp1/fine_tune/ft_1/fine_tune/ft_2...)
+    # It ensures all fine-tunes are siblings in runs/Exp1/fine_tune/
     
-    if "/fine_tune" in normalized_base_path:
-        root_run_dir = normalized_base_path.split("/fine_tune")[0]
-        root_run_dir = os.path.normpath(root_run_dir)
+    # Use the directory where config.json was found as the reference point (The Main Anchor)
+    anchor_dir = os.path.dirname(config_path)
+    normalized_anchor = anchor_dir.replace("\\", "/")
+    
+    if "/fine_tune" in normalized_anchor:
+        # If the config was found inside a fine_tune folder (nested scenario), 
+        # strip back to the real mother root.
+        root_run_dir = normalized_anchor.split("/fine_tune")[0]
     else:
-        root_run_dir = BASE_RUN_DIR
+        # If the config is at the root, use it directly.
+        root_run_dir = normalized_anchor
+        
+    root_run_dir = os.path.normpath(root_run_dir)
 
     current_time = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-    ft_folder_name = f"ft_{current_time}_Adaptive_PowerLaw"
+    ft_folder_name = f"ft_{current_time}"
     
+    # Create path: runs/ExpName/fine_tune/ft_Timestamp
     ft_result_dir = os.path.join(root_run_dir, "fine_tune", ft_folder_name)
     os.makedirs(ft_result_dir, exist_ok=True)
 
@@ -288,7 +298,7 @@ def main():
     )
     writer = SummaryWriter(log_dir=ft_result_dir)
     
-    logging.info(f"--- Started Fine-Tuning (Universal) ---")
+    logging.info(f"--- Started Fine-Tuning (Universal Structure) ---")
     logging.info(f"Source Model: {os.path.join(BASE_RUN_DIR, MODEL_NAME)}")
     logging.info(f"Output Directory: {ft_result_dir}")
     
@@ -535,24 +545,34 @@ def main():
                 v_val_pred_ratio = model(X_val_tensor).cpu().numpy().flatten()
                 v_val_true_ratio = V_val_true.flatten() / K_val.flatten()
                 
-                # Metrics
+                # Metrics Calculation
                 diff_ratio = v_val_pred_ratio - v_val_true_ratio
+                abs_diff = np.abs(diff_ratio)
+                
                 rmse_r = np.sqrt(np.mean(diff_ratio**2))
+                mae_r = np.mean(abs_diff)      # [ADDED] MAE
+                bias_r = np.mean(diff_ratio)   # [ADDED] Bias
+                max_err_r = np.max(abs_diff)   # [ADDED] Max Error
                 smape_r = calculate_smape(v_val_true_ratio, v_val_pred_ratio)
                 
-                # [ADDED] R (Correlation Coefficient)
+                # R (Correlation Coefficient)
                 corr_matrix = np.corrcoef(v_val_true_ratio, v_val_pred_ratio)
                 r_score = corr_matrix[0, 1] if not np.isnan(corr_matrix[0, 1]) else 0.0
                 
                 # Log to TensorBoard
                 writer.add_scalar('Metrics_Ratio/RMSE', rmse_r, i)
+                writer.add_scalar('Metrics_Ratio/MAE', mae_r, i)
                 writer.add_scalar('Metrics_Ratio/SMAPE', smape_r, i)
+                writer.add_scalar('Metrics_Ratio/Bias', bias_r, i)
                 writer.add_scalar('Metrics_Ratio/R', r_score, i)
+                writer.add_scalar('Metrics_Ratio/Max_Err', max_err_r, i)
                 
+                # Log Message
                 log_msg = (
                     f"Epoch {i+1:5d} | "
-                    f"Loss: {total_loss.item():.12f} (PDE:{data_loss.item():.12f}) (PDE:{pde_loss.item():.12f}) | "
-                    f"Val: [RMSE:{rmse_r:.4f} SMAPE:{smape_r:.2f}% R:{r_score:.4f}]"
+                    f"Loss: {total_loss.item():.12f} (PDE:{pde_loss.item():.12f} Data:{data_loss.item():.12f}) | "
+                    f"Val(Ratio): [RMSE:{rmse_r:.4f} MAE:{mae_r:.4f} SMAPE:{smape_r:.2f}% "
+                    f"Bias:{bias_r:.4f} R:{r_score:.4f} Max_Err:{max_err_r:.4f}]"
                 )
                 logging.info(log_msg)
         
