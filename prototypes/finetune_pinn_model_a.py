@@ -15,14 +15,14 @@ from mpl_toolkits.mplot3d import Axes3D
 # 1. CONFIGURATION FOR FINE-TUNING
 # ==============================================================================
 # ระบุ Path ของ Run เดิมที่จะดึงมาจูน
-BASE_RUN_DIR = "runs/train_2025-12-07_08-17-11_DynamicBoundaries" 
+BASE_RUN_DIR = "runs/train_2025-12-09_18-18-46_DynamicBoundaries_MixedDist/checkpoints/epoch_390000" 
 MODEL_NAME = "model.pth" # หรือ checkpoint ที่ต้องการ
 
 CHECKPOINT_EPOCHS = 10000 # จำนวนรอบที่ต้องเซฟโมเดลไว้ (สำรองเผื่อไฟดับ)
 
 # ค่าที่อนุญาตให้ปรับ (นอกนั้นใช้ค่าเดิมจากโมเดลแม่)
 FT_CONFIG = {
-    "epochs": 100000,           # [Adjustable] รอบการจูน
+    "epochs": 300000,           # [Adjustable] รอบการจูน
     "lr": 1e-5,                 # [Adjustable] Learning Rate (ควรต่ำกว่าตอนเทรนแม่)
     "n_sample_data": 10000,     # [Adjustable] Batch Size
     "n_sample_pde_multiplier": 4, # [Adjustable] สัดส่วน PDE
@@ -54,6 +54,27 @@ def calculate_smape(true, pred):
     denominator = (np.abs(true) + np.abs(pred)) / 2.0
     diff = np.abs(true - pred)
     return np.mean(diff / (denominator + 1e-8)) * 100
+
+def sample_moneyness_mixed(n, m_min, m_max, std_val):
+    """
+    [NEW] Mixed Distribution Strategy:
+    1. Sample from Gaussian (Normal Distribution).
+    2. Check for outliers (values outside [m_min, m_max]).
+    3. Re-sample outliers using Uniform Distribution (filling the gaps).
+    """
+    # 1. Generate Raw Gaussian
+    data = np.random.normal(1.0, std_val, (n, 1))
+    
+    # 2. Identify Outliers
+    flat_data = data.flatten()
+    outliers_mask = (flat_data < m_min) | (flat_data > m_max)
+    n_out = np.sum(outliers_mask)
+    
+    # 3. Resample Outliers (Uniformly)
+    if n_out > 0:
+        flat_data[outliers_mask] = np.random.uniform(m_min, m_max, n_out)
+    
+    return flat_data.reshape(n, 1)
 
 # --- Visualization Functions (Modified: No Pre-training plots) ---
 def plot_checkpoint_performance(model, config, save_dir, device):
@@ -205,10 +226,28 @@ def plot_post_training(result_dir, history):
 
 def main():
     # --- 1. Load Original Config (Mother Universe) ---
-    config_path = os.path.join(BASE_RUN_DIR, "config.json")
-    if not os.path.exists(config_path):
-        raise FileNotFoundError(f"Config not found at {config_path}")
+    # Traverse up (Limit to 5 levels to be safe)
+    config_path = None
+    current_search_dir = BASE_RUN_DIR
     
+    for _ in range(5): 
+        candidate_path = os.path.join(current_search_dir, "config.json")
+        if os.path.exists(candidate_path):
+            config_path = candidate_path
+            break
+        
+        # Move up one level
+        parent_dir = os.path.dirname(current_search_dir)
+        if parent_dir == current_search_dir: # Reached System Root
+            break
+        current_search_dir = parent_dir
+    
+    if config_path is None:
+        print(f"Error: 'config.json' not found in hierarchy starting from: {BASE_RUN_DIR}")
+        return
+
+    print(f"Loaded Config from: {config_path}")
+
     with open(config_path, 'r') as f:
         MOTHER_CONFIG = json.load(f)
     
@@ -279,7 +318,7 @@ def main():
     TIME_POWER = c_s.get("time_sampling_power", 2.0)
     
     logging.info(f"Sampling Strategy:")
-    logging.info(f" - Price: Gaussian (Range[{M_min}, {M_max}], StdFactor={ADAPTIVE_STD_FACTOR})")
+    logging.info(f" - Price: Mixed Distribution (Gaussian + Uniform Outliers)")
     logging.info(f" - Time:  Power Law (Power={TIME_POWER}, Focus near t=0)")
 
     # --- 3. Normalization Utilities ---
@@ -301,15 +340,16 @@ def main():
         random_steps = np.random.randint(0, n_steps + 1, (n, 1))
         return aligned_min + random_steps * step
 
-    # --- 4. Data Generation Functions (Updated with Power Law) ---
+    # --- 4. Data Generation Functions (Updated with Mixed Distribution) ---
     def get_diff_data(n):
         K_points = get_discrete_K(n, K_min, K_max, K_step_val)
         
-        # Adaptive Moneyness
-        moneyness = np.clip(np.random.normal(1.0, REAL_STD, (n, 1)), M_min, M_max)
+        # [MODIFIED] Use Mixed Distribution
+        moneyness = sample_moneyness_mixed(n, M_min, M_max, REAL_STD)
+        
         S_points = np.clip(K_points * moneyness, S_min_norm, S_max_norm)
         
-        # [UPDATED] Power Law Sampling for Time
+        # Power Law Sampling for Time
         u_time = np.random.uniform(0, 1, (n, 1))
         t_points = t_min + (t_max - t_min) * (u_time ** TIME_POWER)
         
@@ -327,7 +367,10 @@ def main():
         # IVP is strictly t=0, no sampling needed
         t_points = np.zeros((n, 1))
         K_points = get_discrete_K(n, K_min, K_max, K_step_val)
-        moneyness = np.clip(np.random.normal(1.0, REAL_STD, (n, 1)), M_min, M_max)
+        
+        # [MODIFIED] Use Mixed Distribution
+        moneyness = sample_moneyness_mixed(n, M_min, M_max, REAL_STD)
+        
         S_points = np.clip(K_points * moneyness, S_min_norm, S_max_norm)
         sigma_points = np.random.uniform(sig_min, sig_max, (n, 1))
         r_points = np.random.uniform(r_min, r_max, (n, 1))
@@ -342,7 +385,7 @@ def main():
         return X_norm, y_val / K_points
 
     def get_bvp_data(n):
-        # [UPDATED] Power Law Sampling for Time
+        # Power Law Sampling for Time
         u_time = np.random.uniform(0, 1, (n, 1))
         t_points = t_min + (t_max - t_min) * (u_time ** TIME_POWER)
         
@@ -491,17 +534,25 @@ def main():
             with torch.no_grad():
                 v_val_pred_ratio = model(X_val_tensor).cpu().numpy().flatten()
                 v_val_true_ratio = V_val_true.flatten() / K_val.flatten()
+                
+                # Metrics
                 diff_ratio = v_val_pred_ratio - v_val_true_ratio
                 rmse_r = np.sqrt(np.mean(diff_ratio**2))
                 smape_r = calculate_smape(v_val_true_ratio, v_val_pred_ratio)
                 
+                # [ADDED] R (Correlation Coefficient)
+                corr_matrix = np.corrcoef(v_val_true_ratio, v_val_pred_ratio)
+                r_score = corr_matrix[0, 1] if not np.isnan(corr_matrix[0, 1]) else 0.0
+                
+                # Log to TensorBoard
                 writer.add_scalar('Metrics_Ratio/RMSE', rmse_r, i)
                 writer.add_scalar('Metrics_Ratio/SMAPE', smape_r, i)
+                writer.add_scalar('Metrics_Ratio/R', r_score, i)
                 
                 log_msg = (
                     f"Epoch {i+1:5d} | "
-                    f"Loss: {total_loss.item():.12f} (PDE:{pde_loss.item():.12f} Data:{data_loss.item():.12f}) | "
-                    f"Val(Ratio): [RMSE:{rmse_r:.4f} SMAPE:{smape_r:.2f}%]"
+                    f"Loss: {total_loss.item():.12f} (PDE:{data_loss.item():.12f}) (PDE:{pde_loss.item():.12f}) | "
+                    f"Val: [RMSE:{rmse_r:.4f} SMAPE:{smape_r:.2f}% R:{r_score:.4f}]"
                 )
                 logging.info(log_msg)
         

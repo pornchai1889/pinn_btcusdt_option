@@ -46,6 +46,28 @@ def calculate_smape(true, pred):
     # Avoid division by zero
     return np.mean(diff / (denominator + 1e-8)) * 100
 
+def sample_moneyness_mixed(n, m_min, m_max, std_val):
+    """
+    [NEW] Mixed Distribution Strategy:
+    1. Sample from Gaussian (Normal Distribution).
+    2. Check for outliers (values outside [m_min, m_max]).
+    3. Re-sample outliers using Uniform Distribution (filling the gaps).
+    """
+    # 1. Generate Raw Gaussian
+    data = np.random.normal(1.0, std_val, (n, 1))
+    
+    # 2. Identify Outliers
+    # flatten() is used for boolean indexing safety, then reshape back
+    flat_data = data.flatten()
+    outliers_mask = (flat_data < m_min) | (flat_data > m_max)
+    n_out = np.sum(outliers_mask)
+    
+    # 3. Resample Outliers (Uniformly)
+    if n_out > 0:
+        flat_data[outliers_mask] = np.random.uniform(m_min, m_max, n_out)
+    
+    return flat_data.reshape(n, 1)
+
 # --- [MODIFIED] Visualization Functions ---
 def plot_pre_training(result_dir, config):
     """
@@ -60,40 +82,58 @@ def plot_pre_training(result_dir, config):
     m_min, m_max = config["sampling"]["moneyness_range"]
     t_min, t_max = config["market"]["t_range"]
     
-    # --- Dynamic Sigma Calculation ---
+# --- Dynamic Sigma Calculation ---
     range_width = m_max - m_min
     std_val = (range_width / 6.0) * user_std_factor
     
-    # --- Plot 1: Moneyness Density & Zones ---
+    # --- Plot 1: Moneyness Density & Zones (UPDATED) ---
     plt.figure(figsize=(12, 7))
     
-    # X range: Use the config range directly
+    mu = 1.0
     x = np.linspace(m_min, m_max, 1000)
-    mu = 1.0 # Fixed at ATM
     y = norm.pdf(x, mu, std_val)
     max_y = np.max(y)
     
-    # Plot Main Line
-    plt.plot(x, y, color='#333333', linewidth=2.5, label=rf'PDF (Effective $\sigma$={std_val:.4f})', zorder=10)
+    # 1. Calculate Stats (In-Bound vs Outliers)
+    prob_below = norm.cdf(m_min, mu, std_val)
+    prob_above = 1.0 - norm.cdf(m_max, mu, std_val)
+    total_prob_outliers = prob_below + prob_above
+    total_prob_gaussian_in = 1.0 - total_prob_outliers
     
+    # Calculate "Water Level" (Uniform density from recycled outliers)
+    # Density = Probability / Width
+    water_level = total_prob_outliers / range_width
+
+    # 2. Plot Main Gaussian Curve
+    plt.plot(x, y, color='#333333', linewidth=2.5, label=rf'Base Gaussian ($\sigma$={std_val:.4f})', zorder=10)
+    
+    # 3. Zones Visualization (Restored & Active)
     zones = [
         (0, 1, '#2ca02c', 0.45),   # Green (Core)
         (1, 2, '#ff7f0e', 0.15),   # Orange
         (2, 3, '#d62728', 0.04),   # Red
-        (3, 10, '#999999', 0.0)    # Grey (Tail)
+        (3, 10, '#999999', 0.0)    # Grey (Tail - visually minimal inside range)
     ]
     
-    zone_stats = []
-    plt.ylim(bottom=-max_y*0.1, top=max_y * 1.2) 
-
+    zone_legend_handles = []
+    
+    # Plot Water Level Line (Blue Dashed) - "ระดับน้ำ"
+    plt.hlines(water_level, m_min, m_max, colors='#0055A4', linestyles='-.', linewidth=2.0, zorder=15)
+    
+    # Loop to draw zones
     for start_sd, end_sd, color, h_ratio in zones:
+        # Calculate prob for label
         prob_one_side = norm.cdf(end_sd) - norm.cdf(start_sd)
         pct_band_total = prob_one_side * 2 * 100
         
-        label_txt = rf"{start_sd}-{end_sd}$\sigma$" if end_sd <= 3 else rf">{start_sd}$\sigma$ (Tails)"
-        zone_stats.append((label_txt, pct_band_total, color))
+        label_txt = rf"{start_sd}-{end_sd}$\sigma$: {pct_band_total:.2f}%"
+        if end_sd > 3: label_txt = rf">{start_sd}$\sigma$ (Tails)"
+        
+        # Add to legend list
+        from matplotlib.patches import Patch
+        zone_legend_handles.append(Patch(facecolor=color, edgecolor='none', label=label_txt))
 
-        # Right Side
+        # Fill Areas (Right Side)
         right_start = mu + start_sd * std_val
         right_end = mu + end_sd * std_val
         plot_start = max(right_start, m_min)
@@ -103,6 +143,7 @@ def plot_pre_training(result_dir, config):
             x_fill = np.linspace(plot_start, plot_end, 200)
             y_fill = norm.pdf(x_fill, mu, std_val)
             plt.fill_between(x_fill, y_fill, color=color, alpha=0.6)
+            # Text Label
             if end_sd <= 3:
                 text_x = (plot_start + plot_end) / 2
                 text_y = norm.pdf(text_x, mu, std_val) * h_ratio
@@ -111,7 +152,7 @@ def plot_pre_training(result_dir, config):
                              color='white' if start_sd < 1 else 'black', 
                              ha='center', va='center', fontsize=9, fontweight='bold')
 
-        # Left Side
+        # Fill Areas (Left Side)
         left_start = mu - start_sd * std_val
         left_end = mu - end_sd * std_val
         plot_start = max(left_end, m_min)
@@ -121,6 +162,7 @@ def plot_pre_training(result_dir, config):
             x_fill = np.linspace(plot_start, plot_end, 200)
             y_fill = norm.pdf(x_fill, mu, std_val)
             plt.fill_between(x_fill, y_fill, color=color, alpha=0.6)
+            # Text Label
             if end_sd <= 3:
                 text_x = (plot_start + plot_end) / 2
                 text_y = norm.pdf(text_x, mu, std_val) * h_ratio
@@ -129,8 +171,8 @@ def plot_pre_training(result_dir, config):
                              color='white' if start_sd < 1 else 'black', 
                              ha='center', va='center', fontsize=9, fontweight='bold')
 
-    # Axis Labels & Markers
-    label_y_pos = -max_y * 0.06
+    # 4. Axis Labels & Markers
+    label_y_pos = -max_y * 0.04
     for i in range(1, 4):
         sd_pos_r = mu + i*std_val
         if m_min < sd_pos_r < m_max:
@@ -141,22 +183,36 @@ def plot_pre_training(result_dir, config):
             plt.axvline(sd_pos_l, color='grey', linestyle=':', alpha=0.5, linewidth=1)
             plt.text(sd_pos_l, label_y_pos, rf"-{i}$\sigma$", ha='center', color='#333333', fontsize=9)
 
-    plt.text(mu, label_y_pos, rf"$\mu$", ha='center', color='black', fontsize=10, fontweight='bold')
     plt.axvline(mu, color='black', linestyle='--', alpha=0.3, linewidth=1)
-
-    # Legend
-    from matplotlib.patches import Patch
-    legend_elements = [Patch(facecolor=c, edgecolor='w', label=f'{lbl}: {val:.2f}%') for lbl, val, c in zone_stats]
-    plt.legend(handles=legend_elements, loc='upper right', title=f"Data Distribution (Total 100%)", framealpha=0.95)
+    plt.text(mu, label_y_pos, rf"$\mu$", ha='center', color='black', fontsize=10, fontweight='bold')
     
-    plt.title(f'Probability Density & Zones (Adaptive Factor={user_std_factor}, Range Width={range_width:.2f})', fontsize=14, pad=20)
+    # 5. Build Custom Legend
+    from matplotlib.lines import Line2D
+    
+    # Add Divider and Summary Stats to Legend
+    separator = Line2D([0], [0], color='white', label='__________________')
+    gaussian_summary = Line2D([0], [0], marker='o', color='w', markerfacecolor='#333333', 
+                              label=f'In-Bound Gaussian: {total_prob_gaussian_in*100:.2f}%')
+    water_summary = Line2D([0], [0], color='#0055A4', linestyle='-.', linewidth=2,
+                           label=f'Recycled Tails (Water): {total_prob_outliers*100:.2f}%')
+    
+    # Combine handles
+    final_handles = zone_legend_handles[:3] + [separator, gaussian_summary, water_summary]
+    
+    plt.legend(handles=final_handles, loc='upper right', framealpha=0.95, title="Data Distribution Stats")
+    
+    title_text = f'Moneyness Distribution: Gaussian Zones + Recycled Outliers (Water Level)\n(Adaptive Factor={user_std_factor}, Range Width={range_width:.2f})'
+    plt.title(title_text, fontsize=14, pad=20)
     plt.xlabel('Moneyness (S/K)')
     plt.ylabel('Probability Density')
+    
+    # Adjust Y limit to see water level clearly if it's low, or fit the mountain if it's high
+    plt.ylim(bottom=-max_y*0.08, top=max_y * 1.25)
+    
     plt.tight_layout()
-    plt.savefig(os.path.join(result_dir, "moneyness_density_zones.png"))
+    plt.savefig(os.path.join(result_dir, "moneyness_density_mixed.png"))
     plt.close()
-
-    # --- Plot 2: Data Sampling Distribution (UPDATED for Power Law) ---
+    # --- Plot 2: Data Sampling Distribution (Unchanged) ---
     fix_K_mid = (config["market"]["K_range"][0] + config["market"]["K_range"][1]) / 2
     fix_K = np.round(fix_K_mid / config["market"]["K_step"]) * config["market"]["K_step"]
     
@@ -166,33 +222,35 @@ def plot_pre_training(result_dir, config):
 
     plt.figure(figsize=(12, 8))
     
-    # 1. PDE (Grey) - Using Power Law for Time
+    # 1. PDE (Grey) - Using Mixed Sampling
     u_pde = np.random.uniform(0, 1, n_pde)
-    t_pde = t_min + (t_max - t_min) * (u_pde ** time_power) # <--- Power Law
-    S_pde = fix_K * np.clip(np.random.normal(1.0, std_val, n_pde), m_min, m_max)
+    t_pde = t_min + (t_max - t_min) * (u_pde ** time_power) 
+    m_pde = sample_moneyness_mixed(n_pde, m_min, m_max, std_val).flatten()
+    S_pde = fix_K * m_pde
+    
     plt.scatter(t_pde, S_pde, c='#cccccc', s=10, alpha=0.4, label='PDE Collocation Points')
     
-    # 2. IVP (Blue) - Fixed at t=0
+    # 2. IVP (Blue)
     t_ivp = np.zeros(n_data)
-    S_ivp = fix_K * np.clip(np.random.normal(1.0, std_val, n_data), m_min, m_max)
+    m_ivp = sample_moneyness_mixed(n_data, m_min, m_max, std_val).flatten()
+    S_ivp = fix_K * m_ivp
     plt.scatter(t_ivp, S_ivp, c='blue', s=20, alpha=0.6, label='IVP (t=0)')
 
-    # 3. BVP Upper (Green) - Using Power Law for Time
+    # 3. BVP Upper (Green)
     u_bvp2 = np.random.uniform(0, 1, n_data)
-    t_bvp2 = t_min + (t_max - t_min) * (u_bvp2 ** time_power) # <--- Power Law
+    t_bvp2 = t_min + (t_max - t_min) * (u_bvp2 ** time_power)
     S_bvp2 = np.full(n_data, fix_K * m_max)
     plt.scatter(t_bvp2, S_bvp2, c='green', marker='x', s=25, alpha=0.6, label=f'BVP Upper (S={fix_K * m_max:.0f})')
 
-    # 4. BVP Lower (Red) - Using Power Law for Time
+    # 4. BVP Lower (Red)
     u_bvp1 = np.random.uniform(0, 1, n_data)
-    t_bvp1 = t_min + (t_max - t_min) * (u_bvp1 ** time_power) # <--- Power Law
+    t_bvp1 = t_min + (t_max - t_min) * (u_bvp1 ** time_power)
     S_bvp1 = np.full(n_data, fix_K * m_min)
     plt.scatter(t_bvp1, S_bvp1, c='red', marker='x', s=25, alpha=0.6, label=f'BVP Lower (S={fix_K * m_min:.0f})')
 
     plt.axhline(fix_K, color='black', linestyle='--', linewidth=1.5, alpha=0.5, label=f'Strike K={fix_K:,.0f}')
     
-    # Update Title to reflect Time Sampling
-    plt.title(rf'Data Sampling Distribution (Gaussian Price + Power Law Time $t \sim u^{{{time_power}}}$)', fontsize=14)
+    plt.title(rf'Data Sampling Distribution (Mixed Moneyness + Power Law Time)', fontsize=14)
     plt.xlabel('Time to Maturity (t)')
     plt.ylabel('Spot Price (S)')
     
@@ -200,7 +258,8 @@ def plot_pre_training(result_dir, config):
                  f"PDE: {n_pde:,}\n"
                  f"IVP: {n_data:,}\n"
                  f"BVP: {n_data*2:,}\n"
-                 f"Time Strategy: Power Law ($p={time_power}$)")
+                 f"Time Strategy: Power Law ($p={time_power}$)\n"
+                 f"Moneyness: Mixed (Normal + Uniform)")
     plt.text(0.02, 0.98, info_text, transform=plt.gca().transAxes, 
              fontsize=10, va='top', bbox=dict(facecolor='white', alpha=0.9))
 
@@ -362,7 +421,7 @@ def plot_post_training(result_dir, history):
 def main():
     # --- 2. Setup Directory & Logging ---
     current_time = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-    run_name = f"train_{current_time}_DynamicBoundaries_Adaptive"
+    run_name = f"train_{current_time}_DynamicBoundaries_MixedDist"
     
     base_output_dir = "runs"
     result_dir = os.path.join(base_output_dir, run_name)
@@ -394,8 +453,6 @@ def main():
         "sampling": {
             "moneyness_range": [0.5, 1.5],
             "adaptive_std": 1.0,
-            # [CRITICAL UPDATE] Time Sampling Power Factor
-            # 2.0 = Square (Focus on t=0)
             "time_sampling_power": 2.0 
         },
         "validation_params": {
@@ -446,6 +503,7 @@ def main():
     logging.info(f"Moneyness Range: [{M_min}, {M_max}] (Width: {RANGE_WIDTH})")
     logging.info(f"Time Sampling: Power Law (Power={TIME_POWER}, Focus near t=0)")
     logging.info(f"Adaptive Factor: {ADAPTIVE_STD_FACTOR} => Calculated Real Sigma: {REAL_STD:.6f}")
+    logging.info("Sampling Strategy: Gaussian + Uniform Resampling for Outliers (Mixed Distribution)")
 
     # --- 4. Normalization Utilities ---
     def normalize_val(val, v_min, v_max):
@@ -469,10 +527,12 @@ def main():
     # --- 5. Data Generation Functions ---
     def get_diff_data(n):
         K_points = get_discrete_K(n, K_min, K_max, K_step_val)
-        moneyness = np.clip(np.random.normal(1.0, REAL_STD, (n, 1)), M_min, M_max)
+        
+        # [MODIFIED] Use Mixed Distribution
+        moneyness = sample_moneyness_mixed(n, M_min, M_max, REAL_STD)
+        
         S_points = np.clip(K_points * moneyness, S_min_norm, S_max_norm)
         
-        # [MODIFIED] Power Law Sampling for Time
         u_time = np.random.uniform(0, 1, (n, 1))
         t_points = t_min + (t_max - t_min) * (u_time ** TIME_POWER)
         
@@ -487,10 +547,13 @@ def main():
         return np.concatenate([t_norm, S_norm, sig_norm, r_norm, K_norm], axis=1)
 
     def get_ivp_data(n):
-        # IVP is strictly t=0, no sampling needed
+        # IVP is strictly t=0
         t_points = np.zeros((n, 1))
         K_points = get_discrete_K(n, K_min, K_max, K_step_val)
-        moneyness = np.clip(np.random.normal(1.0, REAL_STD, (n, 1)), M_min, M_max)
+        
+        # [MODIFIED] Use Mixed Distribution
+        moneyness = sample_moneyness_mixed(n, M_min, M_max, REAL_STD)
+        
         S_points = np.clip(K_points * moneyness, S_min_norm, S_max_norm)
         sigma_points = np.random.uniform(sig_min, sig_max, (n, 1))
         r_points = np.random.uniform(r_min, r_max, (n, 1))
@@ -505,7 +568,6 @@ def main():
         return X_norm, y_val / K_points
 
     def get_bvp_data(n):
-        # [MODIFIED] Power Law Sampling for Time
         u_time = np.random.uniform(0, 1, (n, 1))
         t_points = t_min + (t_max - t_min) * (u_time ** TIME_POWER)
         
@@ -565,6 +627,8 @@ def main():
 
     # --- 7.5 Validation Set ---
     n_val = CONFIG["training"]["n_val_sample"]
+    # Generate validation data (Mixed distribution applied here too for fairness, or use pure uniform for strict test)
+    # Using the same generator as training ensures distributions match.
     X_val_norm = get_diff_data(n_val)
     t_val = denormalize_val(X_val_norm[:, 0], t_min, t_max)
     S_val = denormalize_val(X_val_norm[:, 1], S_min_norm, S_max_norm)
@@ -650,18 +714,27 @@ def main():
             with torch.no_grad():
                 v_val_pred_ratio = model(X_val_tensor).cpu().numpy().flatten()
                 v_val_true_ratio = V_val_true.flatten() / K_val.flatten()
+                
+                # Metrics Calculation
                 diff_ratio = v_val_pred_ratio - v_val_true_ratio
                 rmse_r = np.sqrt(np.mean(diff_ratio**2))
                 smape_r = calculate_smape(v_val_true_ratio, v_val_pred_ratio)
                 
+                # [ADDED] R (Correlation Coefficient)
+                # Compute Pearson correlation matrix
+                corr_matrix = np.corrcoef(v_val_true_ratio, v_val_pred_ratio)
+                # Handle potential NaN if variance is 0 (rare but safe to handle)
+                r_score = corr_matrix[0, 1] if not np.isnan(corr_matrix[0, 1]) else 0.0
+                
                 # Log to TensorBoard
                 writer.add_scalar('Metrics_Ratio/RMSE', rmse_r, i)
                 writer.add_scalar('Metrics_Ratio/SMAPE', smape_r, i)
+                writer.add_scalar('Metrics_Ratio/R', r_score, i)
 
                 log_msg = (
                     f"Epoch {i+1:5d} | "
-                    f"Loss: {total_loss.item():.12f} (PDE:{pde_loss.item():.12f} Data:{data_loss.item():.12f}) | "
-                    f"Val(Ratio): [RMSE:{rmse_r:.4f} SMAPE:{smape_r:.2f}%]"
+                    f"Loss: {total_loss.item():.12f} (PDE:{data_loss.item():.12f}) (PDE:{pde_loss.item():.12f}) | "
+                    f"Val: [RMSE:{rmse_r:.4f} SMAPE:{smape_r:.2f}% R:{r_score:.4f}]"
                 )
                 logging.info(log_msg)
         
