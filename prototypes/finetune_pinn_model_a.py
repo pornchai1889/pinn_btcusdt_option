@@ -15,7 +15,7 @@ from mpl_toolkits.mplot3d import Axes3D
 # 1. CONFIGURATION FOR FINE-TUNING
 # ==============================================================================
 # ระบุ Path ของ Run เดิมที่จะดึงมาจูน
-BASE_RUN_DIR = "runs/train_2025-12-09_18-18-46_DynamicBoundaries_MixedDist/fine_tune/ft_2025-12-10_14-10-17/checkpoints/epoch_20000" 
+BASE_RUN_DIR = "runs/train_2025-12-09_18-18-46_DynamicBoundaries_MixedDist/fine_tune/ft_2025-12-10_15-08-21" 
 MODEL_NAME = "model.pth" # หรือ checkpoint ที่ต้องการ
 
 CHECKPOINT_EPOCHS = 10000 # จำนวนรอบที่ต้องเซฟโมเดลไว้ (สำรองเผื่อไฟดับ)
@@ -23,10 +23,10 @@ CHECKPOINT_EPOCHS = 10000 # จำนวนรอบที่ต้องเซ�
 # ค่าที่อนุญาตให้ปรับ (นอกนั้นใช้ค่าเดิมจากโมเดลแม่)
 FT_CONFIG = {
     "epochs": 600000,           # [Adjustable] รอบการจูน
-    "lr": 1e-4,                 # [Adjustable] Learning Rate (ควรต่ำกว่าหรือเท่ากับตอนเทรนโมเดลแม่)
+    "lr": 1e-5,                 # [Adjustable] Learning Rate (ควรต่ำกว่าหรือเท่ากับตอนเทรนโมเดลแม่)
     "n_sample_data": 10000,     # [Adjustable] Batch Size
     "n_sample_pde_multiplier": 4, # [Adjustable] สัดส่วน PDE
-    "physics_loss_weight": 2.0, # [Adjustable] ความสำคัญของ Physics
+    "physics_loss_weight": 0.1, # [Adjustable] ความสำคัญของ Physics
     "val_interval": 1000,       # [Adjustable] ความถี่ในการ Validate
     "n_val_samples": 100000,    # [Adjustable] จำนวนจุด Validate
     "K_step": 1000.0,           # [Adjustable] ความละเอียดของ Strike Price

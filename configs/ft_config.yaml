@@ -1,0 +1,21 @@
+# configs/ft_config.yaml
+# Configuration for Fine-tuning an existing model
+
+base_run_dir: "runs/train_2025-12-15_19-38-27_DynamicBoundaries_MixedDist/fine_tune/ft_2025-12-15_21-14-26"  # <--- Change this to your model path
+model_checkpoint: "model.pth"        # or "checkpoints/model_epoch_10000.pth"
+device: "cuda:0"  # <--- ("cuda" or "cpu")
+
+fine_tune_params:
+  epochs: 600000
+  lr: 1.0e-5                     # Lower LR for fine-tuning
+  
+  # Adjusted loss weights
+  physics_loss_weight: 0.1       # Relax physics constraint slightly if needed
+  
+  # Data Sampling override
+  n_sample_data: 10000
+  time_sampling_power: 2.0       # Same or different focus
+  
+  # Validation
+  val_interval: 1000
+  checkpoint_epochs: 10000

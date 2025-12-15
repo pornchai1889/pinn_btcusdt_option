@@ -1,20 +1,21 @@
 # --- Core AI & Math ---
-torch
-numpy
-pandas
-scipy           
-scikit-learn    
+torch           # Deep Learning framework (PyTorch)
+numpy           # Fundamental package for scientific computing
+pandas          # Data analysis and manipulation tool
+scipy           # Scientific computing (used for statistical functions)
+scikit-learn    # Machine Learning utilities
 
 # --- Visualization & Tracking ---
-matplotlib      
-tensorboard     # ใช้ดูผลการเทรนแบบ Real-time
+matplotlib      # Static, animated, and interactive plotting
+tensorboard     # Real-time training monitoring and visualization
+tqdm            # Progress bar for loops (Essential for training feedback)
 
 # --- API & Server (Production) ---
-fastapi         # สร้าง API Server
-uvicorn         # รัน Server
-pydantic        # ใช้ตรวจสอบข้อมูล Input ของ API (ปกติมากับ fastapi แต่ลงเเผื่อไว้)
-requests        # ใช้เขียนสคริปต์ Python ทดสอบ API
+fastapi         # Modern, high-performance web framework for building APIs
+uvicorn         # ASGI web server implementation
+pydantic        # Data validation using Python type hints
+requests        # HTTP library for testing APIs
 
 # --- Utilities ---
-pyyaml          # โหลด Config
-joblib          # โหลด/เซฟโมเดล ML ทั่วไป
+pyyaml          # YAML parser for configuration files
+joblib          # Lightweight pipelining and object serialization

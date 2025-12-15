@@ -8,16 +8,7 @@ env/
 .env
 
 # --- Data ---
-data/
-*.csv
-*.xlsx
-*.json
-
-# --- Models ---
-*.pth
-*.pkl
-*.ckpt
-checkpoints/
+kline/
 
 # --- Experiment Tracking & Logs ---
 runs/
