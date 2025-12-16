@@ -10,6 +10,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
 # Import Custom Modules
 from src.physics.call_option import CallOption
+from src.physics.put_option import PutOption
 from src.data.normalizer import MarketNormalizer
 from src.data.generator import DataGenerator
 from src.core.trainer import Trainer
@@ -19,7 +20,7 @@ def load_config(path):
     """Load configuration from YAML file."""
     if not os.path.exists(path):
         raise FileNotFoundError(f"Config file not found at: {path}")
-    with open(path, 'r') as f:
+    with open(path, 'r', encoding='utf-8') as f:
         return yaml.safe_load(f)
 
 def locate_mother_config_and_root(base_search_dir):
@@ -133,11 +134,19 @@ def main():
             yaml.dump(config, f)
 
         # ==========================================
-        # 4. Initialize Components
+        # 4. Initialize Components (AUTO DETECT LOGIC)
         # ==========================================
-        physics_engine = CallOption(config)
+        exp_name = config['experiment']['name'].lower()
+        
+        if "put" in exp_name:
+            logging.info("Detected Experiment Type: PUT Option")
+            physics_engine = PutOption(config)
+        else:
+            logging.info("Detected Experiment Type: CALL Option")
+            physics_engine = CallOption(config)
+
         normalizer = MarketNormalizer(config)
-        data_gen = DataGenerator(config, normalizer)
+        data_gen = DataGenerator(config, normalizer, physics_engine)
         
         # Initialize Visualizer (Plots go to the new fine_tune folder)
         viz = Visualizer(config, physics_engine, ft_run_dir) 

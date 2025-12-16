@@ -1,7 +1,7 @@
 # configs/config_call.yaml
 
 experiment:
-  name: "DynamicBoundaries_MixedDist"
+  name: "Call_Option"
   description: "PINN for Bitcoin Call Option Pricing using Mixed Distribution Sampling"
 
 device: "cuda:0"

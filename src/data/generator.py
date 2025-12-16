@@ -8,10 +8,13 @@ class DataGenerator:
     1. Mixed Moneyness Distribution (Gaussian + Uniform Outliers)
     2. Power Law Time Sampling (Focus on t=0)
     3. Discrete Strike Price (K) Sampling
+    
+    Updated to support both Call and Put options via Physics Engine delegation.
     """
-    def __init__(self, config, normalizer: MarketNormalizer):
+    def __init__(self, config, normalizer: MarketNormalizer, physics_engine):
         self.config = config
         self.norm = normalizer
+        self.physics = physics_engine  # Injected Physics Engine (CallOption or PutOption)
         
         # Unpack Market Parameters
         market = config['market']
@@ -102,8 +105,8 @@ class DataGenerator:
     def get_ivp_batch(self, n):
         """
         Generates Initial Value Problem Data (t=0).
+        Delegates payoff calculation to the Physics Engine (Call or Put).
         Returns: (X_norm, y_norm)
-                 y_norm is the Payoff normalized by K.
         """
         # t is strictly 0
         t = np.zeros((n, 1))
@@ -117,11 +120,8 @@ class DataGenerator:
         # Normalize Inputs
         X_norm = self.norm.normalize_batch(t, S, sigma, r, K)
         
-        # Calculate Targets (Payoff) - Logic handled by Physics Engine usually, 
-        # but simplified here for Data Loading efficiency.
-        # Note: We return raw S, K for physics engine to calculate payoff if needed, 
-        # or calculate here. Calculating here matches original code structure.
-        payoff = np.maximum(S - K, 0)
+        # Calculate Targets (Payoff) dynamically via Physics Engine
+        payoff = self.physics.payoff(S, K)
         y_norm = self.norm.normalize_price(payoff, K)
         
         return X_norm, y_norm
@@ -129,6 +129,7 @@ class DataGenerator:
     def get_bvp_batch(self, n):
         """
         Generates Boundary Value Problem Data (Lower & Upper Bounds of S).
+        Delegates boundary logic to the Physics Engine (Call or Put).
         Returns: (X_lower, y_lower, X_upper, y_upper)
         """
         # Shared randoms
@@ -137,20 +138,20 @@ class DataGenerator:
         r = np.random.uniform(self.r_min, self.r_max, (n, 1))
         K = self._get_discrete_K(n)
 
-        # --- Lower Boundary (S -> S_min, usually approx 0 or deep OTM) ---
-        # Note: Using Moneyness logic from original code: S = K * m_min
+        # --- Lower Boundary (S -> S_min, usually approx 0) ---
         S_lower = np.clip(K * self.m_min, self.S_min, self.S_max) 
         X_lower_norm = self.norm.normalize_batch(t, S_lower, sigma, r, K)
-        y_lower_val = np.zeros((n, 1)) # Call option value is 0 deep OTM
+        
+        # Calculate Lower Boundary Value dynamically
+        y_lower_val = self.physics.boundary_condition_lower(t, r, K)
         y_lower_norm = self.norm.normalize_price(y_lower_val, K)
 
-        # --- Upper Boundary (S -> S_max, deep ITM) ---
-        # Note: Using Moneyness logic from original code: S = K * m_max
+        # --- Upper Boundary (S -> S_max) ---
         S_upper = np.clip(K * self.m_max, self.S_min, self.S_max)
         X_upper_norm = self.norm.normalize_batch(t, S_upper, sigma, r, K)
         
-        # Calculate Deep ITM value: S - K * e^(-rt)
-        y_upper_val = np.maximum(S_upper - K * np.exp(-r * t), 0)
+        # Calculate Upper Boundary Value dynamically
+        y_upper_val = self.physics.boundary_condition_upper(t, S_upper, K, r)
         y_upper_norm = self.norm.normalize_price(y_upper_val, K)
 
         return X_lower_norm, y_lower_norm, X_upper_norm, y_upper_norm
