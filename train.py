@@ -10,6 +10,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
 # Import Custom Modules
 from src.physics.call_option import CallOption
+from src.physics.put_option import PutOption
 from src.data.normalizer import MarketNormalizer
 from src.data.generator import DataGenerator
 from src.core.trainer import Trainer
@@ -19,14 +20,14 @@ def load_config(path):
     """Load configuration from YAML file."""
     if not os.path.exists(path):
         raise FileNotFoundError(f"Config file not found at: {path}")
-    with open(path, 'r') as f:
+    with open(path, 'r', encoding='utf-8') as f:
         return yaml.safe_load(f)
 
 def main():
     # ==========================================
     # 1. Configuration & Environment Setup
     # ==========================================
-    config_path = "configs/config_call.yaml"
+    config_path = "configs/config_put.yaml"
     config = load_config(config_path)
     
     # Setup Run Directory
@@ -64,11 +65,19 @@ def main():
         # ==========================================
         
         # Physics Engine (Handles PDE logic and analytical solutions)
-        physics_engine = CallOption(config)
+        # --- Auto-Detect Call/Put ---
+        exp_name = config['experiment']['name'].lower()
         
+        if "put" in exp_name:
+            logging.info("Detected Experiment Type: PUT Option")
+            physics_engine = PutOption(config)
+        else:
+            logging.info("Detected Experiment Type: CALL Option")
+            physics_engine = CallOption(config)        
+
         # Data Pipeline (Normalization & Generation)
         normalizer = MarketNormalizer(config)
-        data_gen = DataGenerator(config, normalizer)
+        data_gen = DataGenerator(config, normalizer, physics_engine)
         
         # Visualization Engine
         # Note: 'run_dir' is passed here to set the default save path
