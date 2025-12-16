@@ -22,7 +22,7 @@ market:
 # 2. Data Sampling Strategy
 # ------------------------------------------------------------------------------
 sampling:
-  moneyness_range: [0.5, 1.5]
+  moneyness_range: [0.0, 2.0]
   adaptive_std: 1.0           
   time_sampling_power: 2.0
 
