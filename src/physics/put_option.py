@@ -36,8 +36,8 @@ class PutOption(OptionPhysics):
     
     def boundary_condition_lower(self, t, r, K):
         """
-        Lower Boundary Condition (S -> 0).
-        For a Put Option, as Spot Price becomes 0 (Deep ITM), the Option Price approaches the Present Value of K.
+        Lower Boundary Condition (S -> Minimum).
+        For a Put Option, as Spot Price becomes Minimum (Deep ITM), the Option Price approaches the Present Value of K.
         Formula: K * e^(-rt)
         """
         if isinstance(t, torch.Tensor):
@@ -46,9 +46,9 @@ class PutOption(OptionPhysics):
 
     def boundary_condition_upper(self, t, S_max, K, r):
         """
-        Upper Boundary Condition (S -> Infinity).
+        Upper Boundary Condition (S -> Maximum (Infinity in theoy)).
         For a Put Option, as Spot Price increases (Deep OTM), the Option Price approaches 0.
         """
         if isinstance(t, torch.Tensor):
             return torch.zeros_like(t)
-        return np.zeros_like(t)
+        return np.zeros_like(t) # Return a zero-filled array (or list) of length t.

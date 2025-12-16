@@ -35,17 +35,17 @@ class CallOption(OptionPhysics):
     
     def boundary_condition_lower(self, t, r, K):
         """
-        Lower Boundary Condition (S -> 0).
-        For a Call Option, as Spot Price becomes 0, the Option Price becomes 0.
+        Lower Boundary Condition (S -> Minimum).
+        For a Call Option, as Spot Price becomes Minimum, the Option Price becomes 0.
         """
         if isinstance(t, torch.Tensor):
             return torch.zeros_like(t)
-        return np.zeros_like(t)
+        return np.zeros_like(t) # Return a zero-filled array (or list) of length t.
 
     def boundary_condition_upper(self, t, S_max, K, r):
         """
-        Upper Boundary Condition (S -> Infinity).
-        For a Call Option, as Spot Price increases, Price -> S - K * exp(-rt).
+        Upper Boundary Condition (S -> Maximum).
+        For a Call Option, as Spot Price increases (Maximum), Price -> S - K * exp(-rt).
         """
         if isinstance(t, torch.Tensor):
             return S_max - K * torch.exp(-r * t)
