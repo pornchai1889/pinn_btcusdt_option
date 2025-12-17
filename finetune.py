@@ -149,7 +149,8 @@ def main():
         data_gen = DataGenerator(config, normalizer, physics_engine)
         
         # Initialize Visualizer (Plots go to the new fine_tune folder)
-        viz = Visualizer(config, physics_engine, ft_run_dir) 
+        viz = Visualizer(config, physics_engine, ft_run_dir)
+        viz.plot_pre_training(save_dir=ft_run_dir) 
         
         # ==========================================
         # 5. Initialize Trainer
