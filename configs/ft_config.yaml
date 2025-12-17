@@ -1,7 +1,7 @@
 # configs/ft_config.yaml
 # Configuration for Fine-tuning an existing model
 
-base_run_dir: "runs/train_2025-12-16_10-40-36_Put_Option"  # <--- Change this to your model path
+base_run_dir: "runs/train_2025-12-17_20-01-37_put"  # <--- Model path
 model_checkpoint: "model.pth"        # or "checkpoints/model_epoch_10000.pth"
 device: "cuda:0"  # <--- ("cuda" or "cpu")
 
@@ -14,7 +14,8 @@ fine_tune_params:
   
   # Data Sampling override
   n_sample_data: 10000
-  time_sampling_power: 2.0       # Same or different focus
+  adaptive_std: 1.0              # Same or different focus (default: 1)
+  time_sampling_power: 2.0       # Same or different focus (default: 2)
   
   # Validation
   val_interval: 1000
