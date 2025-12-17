@@ -148,7 +148,7 @@ class Visualizer:
         final_handles = zone_legend_handles[:3] + [separator, gaussian_summary, water_summary]
         plt.legend(handles=final_handles, loc='upper right', framealpha=0.95, title="Data Distribution Stats")
         
-        plt.title(f'Moneyness Distribution: Gaussian Zones + Recycled Outliers (Water Level)\n(Adaptive Factor={user_std_factor}, Range Width={range_width:.2f})', fontsize=14, pad=20)
+        plt.title(f'Moneyness Distribution: Gaussian Zones + Recycled Outliers (Water Level)\n(Adaptive SD={user_std_factor}, Range Width={range_width:.2f})', fontsize=14, pad=20)
         plt.xlabel('Moneyness (S/K)')
         plt.ylabel('Probability Density')
         plt.ylim(bottom=-max_y*0.08, top=max_y * 1.25)
@@ -201,12 +201,13 @@ class Visualizer:
         plt.xlabel('Time to Maturity (t)')
         plt.ylabel('Spot Price (S)')
         
-        info_text = (f"Point Counts (Total: {total_points:,}):\n"
+        info_text = (f"Total Point: {total_points:,}\n"
                      f"PDE: {n_pde:,}\n"
                      f"IVP: {n_data:,}\n"
                      f"BVP: {n_data*2:,}\n"
-                     f"Time Strategy: Power Law ($p={time_power}$)\n"
-                     f"Moneyness: Mixed (Normal + Uniform)")
+                     f"Adaptive SD: {user_std_factor}\n"              
+                     f"Time Power: {time_power}")
+
         plt.text(0.02, 0.98, info_text, transform=plt.gca().transAxes, 
                  fontsize=10, va='top', bbox=dict(facecolor='white', alpha=0.9))
 

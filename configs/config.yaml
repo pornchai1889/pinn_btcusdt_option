@@ -1,8 +1,8 @@
-# configs/config_call.yaml
+# configs/config.yaml
 
 experiment:
-  name: "Call_Option"
-  description: "PINN for Bitcoin Call Option Pricing using Mixed Distribution Sampling"
+  name: "call" # "call" or "put" Option for modeling
+  description: "PINN for Bitcoin Option Pricing using Mixed Distribution Sampling"
 
 device: "cuda:0"
 
@@ -22,9 +22,9 @@ market:
 # 2. Data Sampling Strategy
 # ------------------------------------------------------------------------------
 sampling:
-  moneyness_range: [0.0, 2.0]
-  adaptive_std: 1.0           
-  time_sampling_power: 2.0
+  moneyness_range: [0.0, 2.0]    # If Put Option V = 0 (Lower Bound). Its max theoretical value approaches K as S to 0.
+  adaptive_std: 1.0              # Same or different focus (default: 1)           
+  time_sampling_power: 2.0       # Same or different focus (default: 2)
 
 # ------------------------------------------------------------------------------
 # 3. Model Architecture
