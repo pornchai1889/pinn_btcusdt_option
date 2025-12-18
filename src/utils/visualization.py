@@ -221,12 +221,21 @@ class Visualizer:
         """
         Generate 3D Surface and Scatter plots for model validation.
         Saved to the specific checkpoint directory (or root if final).
+        
+        Updates:
+        - Logic to invert Spot Price Axis (Y-axis) for Put Options to align visual orientation with Call Options.
+        - Adjusted label padding and figure layout to prevent text clipping on the edges.
         """
         model.eval()
         
-        # Extract params
+        # Extract validation params
         fix_sig = self.config["validation_params"]["fix_sigma"]
         fix_r = self.config["validation_params"]["fix_r"]
+        
+        # Determine Experiment Type (Call or Put)
+        # Used to adjust the visual orientation of the 3D plot
+        exp_name = self.config['experiment']['name'].lower()
+        is_put_option = "put" in exp_name
         
         # Fix K (Mid range)
         k_min, k_max = self.market["K_range"]
@@ -237,19 +246,21 @@ class Visualizer:
         t_min, t_max = self.market["t_range"]
         
         # Generate Grid for 3D Plot
+        # S_plot: Spot Price axis
+        # t_plot: Time axis
         S_plot = np.linspace(fix_K * m_min, fix_K * m_max, 100)
         t_plot = np.linspace(t_min, t_max, 100)
         S_grid, t_grid = np.meshgrid(S_plot, t_plot)
         
-        # Prepare Input
+        # Prepare Input Vector
         X_flat = np.zeros((S_grid.size, 5))
         X_flat[:, 0] = t_grid.flatten() # t
         X_flat[:, 1] = S_grid.flatten() # S
-        X_flat[:, 2] = fix_sig         # sigma
-        X_flat[:, 3] = fix_r           # r
-        X_flat[:, 4] = fix_K           # K
+        X_flat[:, 2] = fix_sig          # sigma
+        X_flat[:, 3] = fix_r            # r
+        X_flat[:, 4] = fix_K            # K
         
-        # Manual Normalization (To match original script logic exactly)
+        # Manual Normalization
         c_m = self.market
         t_norm = (X_flat[:, 0] - c_m["t_range"][0]) / (c_m["t_range"][1] - c_m["t_range"][0])
         S_norm = (X_flat[:, 1] - c_m["S_range"][0]) / (c_m["S_range"][1] - c_m["S_range"][0])
@@ -257,8 +268,12 @@ class Visualizer:
         r_norm = (X_flat[:, 3] - c_m["r_range"][0]) / (c_m["r_range"][1] - c_m["r_range"][0])
         K_norm = (X_flat[:, 4] - c_m["K_range"][0]) / (c_m["K_range"][1] - c_m["K_range"][0])
         
-        X_tensor = torch.tensor(np.stack([t_norm, S_norm, sig_norm, r_norm, K_norm], axis=1), dtype=torch.float32).to(device)
+        X_tensor = torch.tensor(
+            np.stack([t_norm, S_norm, sig_norm, r_norm, K_norm], axis=1), 
+            dtype=torch.float32
+        ).to(device)
         
+        # Inference
         with torch.no_grad():
             V_pred_norm = model(X_tensor).cpu().numpy().flatten()
             
@@ -266,34 +281,52 @@ class Visualizer:
         V_pred = V_pred_norm * fix_K
         V_pred_grid = V_pred.reshape(S_grid.shape)
         
-        # Analytical Solution (Delegate to Physics Engine)
+        # Analytical Solution
         V_true = self.physics.analytical_solution(t_grid, S_grid, fix_K, fix_r, fix_sig)
         
         # =================================================================
         # Plot 1: 3D Surface Comparison
         # =================================================================
-        fig = plt.figure(figsize=(14, 7))
+        # Increased figure width (16) to prevent label clipping on the right side
+        fig = plt.figure(figsize=(16, 8)) 
         
         param_text = rf"Fixed Parameters: $\sigma={fix_sig}, r={fix_r}, K={fix_K:,.0f}$"
-        fig.suptitle(f"3D Surface Comparison (Epoch {epoch})\n({param_text})", fontsize=14)
+        fig.suptitle(f"3D Surface Comparison (Epoch {epoch})\n({param_text})\n", fontsize=14, y=0.98)
         
+        # Helper to style 3D axes
+        def style_3d_axis(ax, title):
+            ax.set_title(title, fontsize=12, pad=10)
+            
+            # Label Padding: Pushes text away from the axis numbers to prevent overlap
+            ax.set_xlabel(rf'Time to Maturity ($\tau$)', labelpad=12)
+            ax.set_ylabel('Spot Price (S)', labelpad=15)
+            ax.set_zlabel('Option Price (V)', labelpad=18)
+            ax.tick_params(axis='z', pad=10)
+            # View Adjustment: Standard isometric-like view
+            ax.view_init(elev=30, azim=-60)
+            
+            # Put Option Adjustment:
+            # We invert the Y-axis (Spot Price) because ax.plot_surface(X, Y, Z) maps S to Y.
+            # Inverting S makes the Put Payoff ramp visual align with the Call Payoff ramp (Low S = High V).
+            if is_put_option:
+                ax.invert_yaxis() 
+
+        # Subplot 1: Analytical
         ax1 = fig.add_subplot(121, projection='3d')
+        # Note: t_grid maps to X-axis, S_grid maps to Y-axis
         ax1.plot_surface(t_grid, S_grid, V_true, cmap='viridis', edgecolor='none', alpha=0.9)
-        ax1.set_title('Analytical Solution', fontsize=12)
-        ax1.set_xlabel('Time (t)')
-        ax1.set_ylabel('Spot Price (S)')
-        ax1.set_zlabel('Option Price (V)')
+        style_3d_axis(ax1, 'Analytical Solution')
         
+        # Subplot 2: Prediction
         ax2 = fig.add_subplot(122, projection='3d')
         ax2.plot_surface(t_grid, S_grid, V_pred_grid, cmap='viridis', edgecolor='none', alpha=0.9)
-        ax2.set_title('PINN Prediction', fontsize=12)
-        ax2.set_xlabel('Time (t)')
-        ax2.set_ylabel('Spot Price (S)')
-        ax2.set_zlabel('Option Price (V)')
+        style_3d_axis(ax2, 'PINN Prediction')
         
-        plt.tight_layout()
-        plt.subplots_adjust(top=0.88)
-        plt.savefig(os.path.join(save_dir, "3d_surface_comparison.png"))
+        # Layout Adjustment:
+        # Instead of tight_layout, we manually adjust margins to ensure labels aren't cut off.
+        plt.subplots_adjust(left=0.05, right=0.95, top=0.85, bottom=0.05, wspace=0.15)
+        
+        plt.savefig(os.path.join(save_dir, "3d_surface_comparison.png"), dpi=120)
         plt.close()
         
         # =================================================================
@@ -306,6 +339,7 @@ class Visualizer:
         
         plt.scatter(v_pred_flat, v_true_flat, alpha=0.5, s=10, label='Prediction Points')
         
+        # Reference Line (y=x)
         min_val = min(np.min(v_true_flat), np.min(v_pred_flat))
         max_val = max(np.max(v_true_flat), np.max(v_pred_flat))
         plt.plot([min_val, max_val], [min_val, max_val], 'r--', linewidth=2, label='Ideal Match (y=x)')
@@ -321,8 +355,6 @@ class Visualizer:
         plt.tight_layout()
         plt.savefig(os.path.join(save_dir, "scatter_comparison.png"))
         plt.close()
-
-
 
     def plot_loss_history(self, history, save_dir=None):
         """
