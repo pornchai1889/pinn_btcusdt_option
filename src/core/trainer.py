@@ -3,6 +3,7 @@ import logging
 import torch
 import torch.nn as nn
 from tqdm import tqdm
+import numpy as np
 
 # Internal modules
 from src.models.pinn_net import UniversalPINN
@@ -19,6 +20,10 @@ class Trainer:
     Refactored to align with 'pinn_model_a.py' directory structure:
     - Periodic Checkpoints -> runs/run_name/checkpoints/epoch_N/ (Model + Plots)
     - Final/Interrupted Model -> runs/run_name/ (Model + Plots)
+    
+    [Update]: 
+    - Incorporated 'Kink Loss' with configurable sampling multiplier.
+    - Refactored Loss Weights to be fully configurable via config.yaml.
     """
     def __init__(self, config, physics_engine: OptionPhysics, 
                  data_generator: DataGenerator, visualizer: Visualizer,
@@ -45,10 +50,12 @@ class Trainer:
         self._prepare_validation_set()
         
         # Track history for post-training plots
+        # Added 'kink' to track the specific loss for the strike price point
         self.history = {
             'total': [], 'pde': [], 'data': [], 
             'ivp': [], 'bvp_total': [], 
-            'bvp_min': [], 'bvp_max': []
+            'bvp_min': [], 'bvp_max': [],
+            'kink': [] 
         }
         
     def _init_model(self, mode, checkpoint_path):
@@ -124,30 +131,53 @@ class Trainer:
             logging.info("Training workflow complete.")
 
     def _train_step(self):
-        """Single optimization step."""
+        """Single optimization step with configurable weighted losses."""
         self.model.train()
         self.optimizer.zero_grad()
         
-        # Unpack Config
-        n_data = self.config['training']['n_sample_data']
-        n_pde = n_data * self.config['training']['n_sample_pde_multiplier']
-        phys_weight = self.config['training']['physics_loss_weight']
+        # --- Configuration & Weights (From Config) ---
+        conf_train = self.config['training']
+        n_data = conf_train['n_sample_data']
+        pde_multiplier = conf_train.get('n_sample_pde_multiplier', 4.0)
+        n_pde = int(n_data * pde_multiplier)
+        kink_multiplier = conf_train.get('n_sample_kink_multiplier', 0.5)
+        n_kink = int(n_data * kink_multiplier)
         
-        # --- Data Loss ---
+        # Extract weights from config (with defaults if missing)
+        w_physics = conf_train.get('physics_loss_weight', 1.0)
+        w_ivp = conf_train.get('ivp_loss_weight', 10.0)
+        w_bvp = conf_train.get('bvp_loss_weight', 10.0)   
+        w_kink = conf_train.get('kink_loss_weight', 100.0) 
+        
+        # --- 1. Data Loss (Boundary Conditions) ---
+        # IVP (t=0)
         ivp_x, ivp_y = self.data_gen.get_ivp_batch(n_data)
-        loss_ivp = self.loss_fn(self.model(self._to_tensor(ivp_x)), self._to_tensor(ivp_y))
+        pred_ivp = self.model(self._to_tensor(ivp_x))
+        loss_ivp = self.loss_fn(pred_ivp, self._to_tensor(ivp_y))
 
+        # BVP (Upper/Lower S)
         bvp_lx, bvp_ly, bvp_ux, bvp_uy = self.data_gen.get_bvp_batch(n_data)
         loss_bvp_l = self.loss_fn(self.model(self._to_tensor(bvp_lx)), self._to_tensor(bvp_ly))
         loss_bvp_u = self.loss_fn(self.model(self._to_tensor(bvp_ux)), self._to_tensor(bvp_uy))
         loss_bvp_total = loss_bvp_l + loss_bvp_u
         
-        loss_data = loss_ivp + loss_bvp_total
+        # --- 2. Kink Loss (Hard Attention) ---
+        # Specifically target S=K at t=0 to force sharp turn
+        # Using dynamic batch size calculated from config multiplier
+        kink_x_np = self.data_gen.get_kink_batch(n_kink)
+        kink_x = self._to_tensor(kink_x_np)        
 
-        # --- Physics Loss ---
+        kink_target = torch.zeros(kink_x.shape[0], 1).to(self.device) # Payoff at ATM is exactly 0
+        pred_kink = self.model(kink_x)
+        loss_kink = self.loss_fn(pred_kink, kink_target)
+
+        # Combined Data Loss with Configurable Weights
+        loss_data = (w_ivp * loss_ivp) + (w_bvp * loss_bvp_total) + (w_kink * loss_kink)
+
+        # --- 3. Physics Loss (PDE) ---
         pde_x = self._to_tensor(self.data_gen.get_pde_batch(n_pde), requires_grad=True)
         pde_res = self.physics.compute_pde_residual(self.model, pde_x)
-        loss_physics = phys_weight * self.loss_fn(pde_res, torch.zeros_like(pde_res))
+        loss_physics = w_physics * self.loss_fn(pde_res, torch.zeros_like(pde_res))
 
         # --- Backprop ---
         total_loss = loss_data + loss_physics
@@ -161,7 +191,8 @@ class Trainer:
             'ivp': loss_ivp.item(),
             'bvp_total': loss_bvp_total.item(),
             'bvp_min': loss_bvp_l.item(),
-            'bvp_max': loss_bvp_u.item()
+            'bvp_max': loss_bvp_u.item(),
+            'kink': loss_kink.item()
         }
 
     def _validate(self, epoch, loss_dict):
@@ -180,7 +211,6 @@ class Trainer:
     def _save_snapshot(self, tag, is_final=False):
         """
         Saves the model and generates performance plots.
-        
         Args:
             tag (str|int): Identifier for the save (e.g., epoch number or "final").
             is_final (bool): If True, saves to root dir. If False, saves to checkpoints/epoch_X.
@@ -192,14 +222,12 @@ class Trainer:
         else:
             save_dir = os.path.join(self.run_dir, "checkpoints", f"epoch_{tag}")
             os.makedirs(save_dir, exist_ok=True)
-            #logging.info(f"Saving Checkpoint to: {save_dir}")
 
         # 2. Save Model State
         model_path = os.path.join(save_dir, "model.pth")
         torch.save(self.model.state_dict(), model_path)
 
-        # 3. Generate Performance Plots (3D Surface & Scatter)
-        # We pass the specific save_dir so plots end up next to the model file
+        # 3. Generate Performance Plots
         try:
             self.viz.plot_checkpoint_performance(
                 model=self.model, 
@@ -219,7 +247,7 @@ class Trainer:
         self.history['bvp_total'].append(losses['bvp_total'])
         self.history['bvp_min'].append(losses['bvp_min'])
         self.history['bvp_max'].append(losses['bvp_max'])
-
+        self.history['kink'].append(losses['kink']) 
 
     def _to_tensor(self, array, requires_grad=False):
         t = torch.from_numpy(array).float().to(self.device)

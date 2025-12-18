@@ -156,6 +156,42 @@ class DataGenerator:
 
         return X_lower_norm, y_lower_norm, X_upper_norm, y_upper_norm
     
+    def get_kink_batch(self, n_samples):
+        """
+        Generates a specific batch where S = K and t = 0 (The Kink).
+        Used for Hard Attention mechanism in training.
+        """
+        # 1. Reuse IVP logic to get valid distributions for sigma, r, K
+        # We don't care about the S and t returned here, just the params
+        raw_ivp = self.get_ivp_batch(n_samples)[0] # Returns [t, S, sig, r, K] 
+        # At t = 0, S = K: Call Option: V = max(S - K, 0) = max(0, 0) = 0
+        # At t = 0, S = K: Put Option: V = max(K - S, 0) = max(0, 0) = 0
+        
+        # 2. Extract ranges from self.norm (NormalizationHandler)
+        # Note: Assuming self.norm stores the config ranges
+        S_min, S_max = self.norm.S_range
+        K_min, K_max = self.norm.K_range
+        
+        # 3. Process to force S = K
+        # Extract Normalized K (index 4)
+        K_norm = raw_ivp[:, 4]
+        
+        # Decode K_norm -> K_real
+        K_real = K_norm * (K_max - K_min) + K_min
+        
+        # Set S_real = K_real
+        S_real_target = K_real
+        
+        # Encode S_real -> S_norm
+        S_norm_target = (S_real_target - S_min) / (S_max - S_min)
+        
+        # 4. Construct Kink Batch
+        kink_batch = raw_ivp.copy()
+        kink_batch[:, 0] = 0.0          # Force t=0 (Maturity)
+        kink_batch[:, 1] = S_norm_target # Force S=K (At The Money)
+        
+        return kink_batch
+    
     def get_validation_batch(self, n):
         """
         Generates a generic batch for validation/testing.
