@@ -1,7 +1,7 @@
 # configs/config.yaml
 
 experiment:
-  name: "call" # "call" or "put" Option for modeling
+  name: "put" # "call" or "put" Option for modeling
   description: "PINN for Bitcoin Option Pricing using Mixed Distribution Sampling"
 
 device: "cuda:0"
@@ -34,6 +34,8 @@ model:
   n_output: 1
   n_hidden: 256
   n_layers: 4
+  hidden_activation: "tanh"       # options: "tanh", "silu", "gelu", "relu", "sigmoid"...(default: tanh) 
+  output_activation: "softplus"   # options: "softplus", "relu", "identity"...(default: softplus) 
 
 # ------------------------------------------------------------------------------
 # 4. Training Hyperparameters
