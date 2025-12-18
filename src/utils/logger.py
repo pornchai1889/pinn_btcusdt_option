@@ -4,6 +4,9 @@ from torch.utils.tensorboard import SummaryWriter
 class TrainingLogger:
     """
     Wrapper for TensorBoard and Standard Logging.
+    
+    [Update]: Added logging support for 'Kink Loss' to track 
+    sharpness learning progress at the strike price.
     """
     def __init__(self, log_dir):
         self.writer = SummaryWriter(log_dir=log_dir)
@@ -26,6 +29,10 @@ class TrainingLogger:
         self.writer.add_scalar('Loss_Detail/BVP_Total', losses['bvp_total'], epoch)
         self.writer.add_scalar('Loss_Detail/BVP1_Min', losses['bvp_min'], epoch)
         self.writer.add_scalar('Loss_Detail/BVP2_Max', losses['bvp_max'], epoch)
+        
+        # [Added] Track Kink Loss specifically
+        if 'kink' in losses:
+            self.writer.add_scalar('Loss_Detail/Kink', losses['kink'], epoch)
 
     def log_validation_metrics(self, epoch, metrics, losses):
         """
@@ -37,12 +44,15 @@ class TrainingLogger:
             tag = f'Metrics_Ratio/{key.upper() if len(key) <= 3 else key.replace("_", " ").title()}'
             self.writer.add_scalar(tag, value, epoch)
 
-        # Console Log (Aligned with original format)
+        # Console Log
+        # [Update]: Added 'Kink' to the loss breakdown for real-time monitoring
+        kink_loss_str = f" Kink:{losses['kink']:.8f}" if 'kink' in losses else ""
+        
         log_msg = (
             f"Epoch {epoch:5d} | "
-            f"Loss: {losses['total']:.12f} (PDE:{losses['pde']:.12f} Data:{losses['data']:.12f}) | "
+            f"Loss: {losses['total']:.8f} (PDE:{losses['pde']:.8f} Data:{losses['data']:.8f}{kink_loss_str}) | "
             f"Val(Ratio): [RMSE:{metrics['rmse']:.4f} MAE:{metrics['mae']:.4f} SMAPE:{metrics['smape']:.2f}% "
-            f"Bias:{metrics['bias']:.4f} R:{metrics['r_score']:.4f} Max_Err:{metrics['max_error']:.4f}]"
+            f"R:{metrics['r_score']:.4f}]"
         )
         logging.info(log_msg)
 

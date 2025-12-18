@@ -106,6 +106,10 @@ def main():
         # Check Device
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         logging.info(f"Active Device: {device}")
+        if torch.cuda.is_available():
+            torch.zeros(1).cuda() # Warmup
+            logging.info("GPU Warmed up and ready.")
+
 
         # ==========================================
         # 3. Configuration Integration

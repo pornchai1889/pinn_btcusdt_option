@@ -19,16 +19,18 @@ class Visualizer:
     3. Post-training Loss Curves.
     """
 
-    def __init__(self, config, physics_engine):
+    def __init__(self, config, physics_engine, run_dir=None):
         """
         Args:
             config (dict): Global configuration dictionary.
             physics_engine (OptionPhysics): Instance used for analytical solutions.
+            run_dir (str, optional): Root directory for saving default plots. Defaults to None.
         """
         self.config = config
         self.physics = physics_engine
+        self.run_dir = run_dir # เก็บค่าไว้ใช้ (ถ้ามี)
         
-        # Cache specific config sections for easier access
+        # Cache specific config sections
         self.market = config['market']
         self.sampling = config['sampling']
         self.train_conf = config['training']
@@ -78,9 +80,9 @@ class Visualizer:
         
         # 3. Zones Visualization
         zones = [
-            (0, 1, '#2ca02c', 0.45),   # Green (Core)
-            (1, 2, '#ff7f0e', 0.15),   # Orange
-            (2, 3, '#d62728', 0.04),   # Red
+            (0, 1, '#2ca02c', 0.50),   # Green (Core)
+            (1, 2, '#ff7f0e', 0.50),   # Orange
+            (2, 3, '#d62728', 0.50),   # Red
             (3, 10, '#999999', 0.0)    # Grey (Tail)
         ]
         
@@ -122,7 +124,7 @@ class Visualizer:
                         text_y = norm.pdf(text_x, mu, std_val) * h_ratio
                         if m_min < text_x < m_max:
                             plt.text(text_x, text_y, f"{prob_one_side*100:.1f}%", 
-                                     color='white' if start_sd < 1 else 'black', 
+                                     color='black', 
                                      ha='center', va='center', fontsize=9, fontweight='bold')
 
         # 4. Axis Labels & Markers
@@ -141,15 +143,19 @@ class Visualizer:
         # 5. Build Custom Legend
         separator = Line2D([0], [0], color='white', label='__________________')
         gaussian_summary = Line2D([0], [0], marker='o', color='w', markerfacecolor='#333333', 
-                                  label=f'In-Bound Gaussian: {total_prob_gaussian_in*100:.2f}%')
+                                  label=f'Gaussian Core Mass: {total_prob_gaussian_in*100:.2f}%')
         water_summary = Line2D([0], [0], color='#0055A4', linestyle='-.', linewidth=2,
-                               label=f'Recycled Tails (Water): {total_prob_outliers*100:.2f}%')
+                               label=f'Redistributed Tail Mass: {total_prob_outliers*100:.2f}%')
         
         final_handles = zone_legend_handles[:3] + [separator, gaussian_summary, water_summary]
-        plt.legend(handles=final_handles, loc='upper right', framealpha=0.95, title="Data Distribution Stats")
+        plt.legend(handles=final_handles, loc='upper right', framealpha=0.95, title="Data Distribution Statistics")
         
-        plt.title(f'Moneyness Distribution: Gaussian Zones + Recycled Outliers (Water Level)\n(Adaptive SD={user_std_factor}, Range Width={range_width:.2f})', fontsize=14, pad=20)
-        plt.xlabel('Moneyness (S/K)')
+        plt.title(
+            'Moneyness Distribution: Gaussian Core with Uniform Tail Redistribution \n'
+            rf'(Adaptive $\sigma$={user_std_factor}, Interval Width={range_width:.2f})', 
+            fontsize=14, pad=20
+        )
+        plt.xlabel('Moneyness ($S/K$)')
         plt.ylabel('Probability Density')
         plt.ylim(bottom=-max_y*0.08, top=max_y * 1.25)
         plt.tight_layout()
@@ -157,18 +163,21 @@ class Visualizer:
         plt.close()
 
         # =================================================================
-        # Plot 2: Data Sampling Distribution
+        # Plot 2: Data Sampling Distribution (Updated)
         # =================================================================
         fix_K_mid = (self.market["K_range"][0] + self.market["K_range"][1]) / 2
         fix_K = np.round(fix_K_mid / self.market["K_step"]) * self.market["K_step"]
         
         n_data = self.train_conf["n_sample_data"]
-        n_pde = n_data * self.train_conf["n_sample_pde_multiplier"]
-        total_points = n_pde + n_data + (n_data*2)
+        
+        pde_multiplier = self.train_conf.get('n_sample_pde_multiplier', 4.0)
+        n_pde = int(n_data * pde_multiplier)
+        kink_multiplier = self.train_conf.get('n_sample_kink_multiplier', 0.5)
+        n_kink = int(n_data * kink_multiplier)
+        total_points = n_pde + n_data + (n_data*2) + n_kink
 
         plt.figure(figsize=(12, 8))
         
-        # Generate dummy points for visualization using local helper
         # 1. PDE (Grey)
         u_pde = np.random.uniform(0, 1, n_pde)
         t_pde = t_min + (t_max - t_min) * (u_pde ** time_power) 
@@ -181,31 +190,46 @@ class Visualizer:
         t_ivp = np.zeros(n_data)
         m_ivp = self._sample_moneyness_mixed(n_data, m_min, m_max, std_val).flatten()
         S_ivp = fix_K * m_ivp
-        plt.scatter(t_ivp, S_ivp, c='blue', s=20, alpha=0.6, label='IVP (t=0)')
+        # ใส่ r นำหน้าเพื่อความปลอดภัย
+        plt.scatter(t_ivp, S_ivp, c='blue', s=20, alpha=0.6, label=r'IVP ($\tau=0$)')
 
-        # 3. BVP Upper (Green)
+        # [NEW] 3. Kink Focus (Gold Star) - Hard Attention
+        # สร้างจุดจำลองที่ S=K, t=0
+        t_kink = np.zeros(n_kink)
+        S_kink = np.full(n_kink, fix_K)
+        # ใช้ zorder เยอะๆ เพื่อให้ลอยอยู่บนสุด, ใช้ marker='*' รูปดาว
+        plt.scatter(t_kink, S_kink, c='gold', marker='*', s=150, edgecolors='black', linewidth=0.5, 
+                    zorder=10, label=r'Kink Focus ($S=K, \tau=0$)')
+
+        # 4. BVP Upper (Green)
         u_bvp2 = np.random.uniform(0, 1, n_data)
         t_bvp2 = t_min + (t_max - t_min) * (u_bvp2 ** time_power)
         S_bvp2 = np.full(n_data, fix_K * m_max)
-        plt.scatter(t_bvp2, S_bvp2, c='green', marker='x', s=25, alpha=0.6, label=f'BVP Upper (S={fix_K * m_max:.0f})')
+        plt.scatter(t_bvp2, S_bvp2, c='green', marker='x', s=25, alpha=0.6, 
+                    label=rf'BVP Upper ($S={fix_K * m_max:,.0f}$)')
 
-        # 4. BVP Lower (Red)
+        # 5. BVP Lower (Red)
         u_bvp1 = np.random.uniform(0, 1, n_data)
         t_bvp1 = t_min + (t_max - t_min) * (u_bvp1 ** time_power)
         S_bvp1 = np.full(n_data, fix_K * m_min)
-        plt.scatter(t_bvp1, S_bvp1, c='red', marker='x', s=25, alpha=0.6, label=f'BVP Lower (S={fix_K * m_min:.0f})')
+        plt.scatter(t_bvp1, S_bvp1, c='red', marker='x', s=25, alpha=0.6, 
+                    label=rf'BVP Lower ($S={fix_K * m_min:,.0f}$)')
 
-        plt.axhline(fix_K, color='black', linestyle='--', linewidth=1.5, alpha=0.5, label=f'Strike K={fix_K:,.0f}')
+        # Strike Line
+        plt.axhline(fix_K, color='black', linestyle='--', linewidth=1.5, alpha=0.5, 
+                    label=rf'Strike ($K={fix_K:,.0f}$)')
         
         plt.title(rf'Data Sampling Distribution', fontsize=14)
-        plt.xlabel('Time to Maturity (t)')
-        plt.ylabel('Spot Price (S)')
+        plt.xlabel(r'Time to Maturity ($\tau$)', fontsize=12)
+        plt.ylabel(r'Spot Price ($S$)', fontsize=12)
         
-        info_text = (f"Total Point: {total_points:,}\n"
+        # Info Box Update
+        info_text = (f"Total Points: {total_points:,}\n"
                      f"PDE: {n_pde:,}\n"
                      f"IVP: {n_data:,}\n"
+                     f"Kink Focus: {n_kink:,}\n"  # เพิ่มบรรทัดนี้
                      f"BVP: {n_data*2:,}\n"
-                     f"Adaptive SD: {user_std_factor}\n"              
+                     f"Adaptive $\\sigma$: {user_std_factor}\n"              
                      f"Time Power: {time_power}")
 
         plt.text(0.02, 0.98, info_text, transform=plt.gca().transAxes, 
@@ -219,37 +243,50 @@ class Visualizer:
 
     def plot_checkpoint_performance(self, model, epoch, device, save_dir):
         """
-        Generate 3D Surface and Scatter plots for model validation.
+        Generate comprehensive validation plots: 3D Surface, Scatter Parity, and 2D Payoff Slice.
         Saved to the specific checkpoint directory (or root if final).
+        
+        Updates:
+        - Added [Plot 3]: 2D Payoff at Maturity (t=0) to visualize the "Kink" behavior.
+        - Includes 'Kink Error' metric to quantify sharpness deviation at Strike Price.
+        - Maintains Put/Call visual alignment by inverting axes where appropriate.
         """
         model.eval()
         
-        # Extract params
+        # --- 1. Preparation & Configuration ---
         fix_sig = self.config["validation_params"]["fix_sigma"]
         fix_r = self.config["validation_params"]["fix_r"]
         
-        # Fix K (Mid range)
+        # Determine Experiment Type (Call or Put)
+        exp_name = self.config['experiment']['name'].lower()
+        is_put_option = "put" in exp_name
+        
+        # Fix K (Mid range, rounded to nearest step)
         k_min, k_max = self.market["K_range"]
         k_step = self.market["K_step"]
         fix_K = np.round(((k_min + k_max) / 2) / k_step) * k_step
         
+        # Ranges
         m_min, m_max = self.sampling["moneyness_range"]
         t_min, t_max = self.market["t_range"]
-        
-        # Generate Grid for 3D Plot
+
+        # Param Text for Plots
+        param_text = rf"Fixed Parameters: $\sigma={fix_sig}, r={fix_r}, K={fix_K:,.0f}$"
+
+        # --- 2. Data Generation for 3D & Scatter ---
         S_plot = np.linspace(fix_K * m_min, fix_K * m_max, 100)
         t_plot = np.linspace(t_min, t_max, 100)
         S_grid, t_grid = np.meshgrid(S_plot, t_plot)
         
-        # Prepare Input
+        # Prepare Input Vector (Batch Processing)
         X_flat = np.zeros((S_grid.size, 5))
         X_flat[:, 0] = t_grid.flatten() # t
         X_flat[:, 1] = S_grid.flatten() # S
-        X_flat[:, 2] = fix_sig         # sigma
-        X_flat[:, 3] = fix_r           # r
-        X_flat[:, 4] = fix_K           # K
+        X_flat[:, 2] = fix_sig
+        X_flat[:, 3] = fix_r
+        X_flat[:, 4] = fix_K
         
-        # Manual Normalization (To match original script logic exactly)
+        # Manual Normalization (Matches training logic)
         c_m = self.market
         t_norm = (X_flat[:, 0] - c_m["t_range"][0]) / (c_m["t_range"][1] - c_m["t_range"][0])
         S_norm = (X_flat[:, 1] - c_m["S_range"][0]) / (c_m["S_range"][1] - c_m["S_range"][0])
@@ -257,50 +294,55 @@ class Visualizer:
         r_norm = (X_flat[:, 3] - c_m["r_range"][0]) / (c_m["r_range"][1] - c_m["r_range"][0])
         K_norm = (X_flat[:, 4] - c_m["K_range"][0]) / (c_m["K_range"][1] - c_m["K_range"][0])
         
-        X_tensor = torch.tensor(np.stack([t_norm, S_norm, sig_norm, r_norm, K_norm], axis=1), dtype=torch.float32).to(device)
+        X_tensor = torch.tensor(
+            np.stack([t_norm, S_norm, sig_norm, r_norm, K_norm], axis=1), 
+            dtype=torch.float32
+        ).to(device)
         
+        # Inference 3D
         with torch.no_grad():
             V_pred_norm = model(X_tensor).cpu().numpy().flatten()
             
-        # Scaling back (Output of model is V/K)
         V_pred = V_pred_norm * fix_K
         V_pred_grid = V_pred.reshape(S_grid.shape)
-        
-        # Analytical Solution (Delegate to Physics Engine)
         V_true = self.physics.analytical_solution(t_grid, S_grid, fix_K, fix_r, fix_sig)
         
         # =================================================================
         # Plot 1: 3D Surface Comparison
         # =================================================================
-        fig = plt.figure(figsize=(14, 7))
+        fig = plt.figure(figsize=(16, 8)) 
+        fig.suptitle(f"Option Price Surface Comparison (Epoch {epoch})\n{param_text}", fontsize=14, y=0.98)
         
-        param_text = rf"Fixed Parameters: $\sigma={fix_sig}, r={fix_r}, K={fix_K:,.0f}$"
-        fig.suptitle(f"3D Surface Comparison (Epoch {epoch})\n({param_text})", fontsize=14)
-        
+        def style_3d_axis(ax, title):
+            ax.set_title(title, fontsize=12, pad=10)
+            ax.set_xlabel(rf'Time to Maturity ($\tau$)', labelpad=12)
+            ax.set_ylabel('Spot Price (S)', labelpad=15)
+            ax.set_zlabel('Option Price (V)', labelpad=18)
+            ax.tick_params(axis='z', pad=10)
+            ax.view_init(elev=30, azim=-60)
+            
+            # Put Option Adjustment: Invert Spot Price axis to match Call visual flow
+            if is_put_option:
+                ax.invert_yaxis() 
+
+        # Analytical
         ax1 = fig.add_subplot(121, projection='3d')
         ax1.plot_surface(t_grid, S_grid, V_true, cmap='viridis', edgecolor='none', alpha=0.9)
-        ax1.set_title('Analytical Solution', fontsize=12)
-        ax1.set_xlabel('Time (t)')
-        ax1.set_ylabel('Spot Price (S)')
-        ax1.set_zlabel('Option Price (V)')
+        style_3d_axis(ax1, 'Analytical Solution')
         
+        # Prediction
         ax2 = fig.add_subplot(122, projection='3d')
         ax2.plot_surface(t_grid, S_grid, V_pred_grid, cmap='viridis', edgecolor='none', alpha=0.9)
-        ax2.set_title('PINN Prediction', fontsize=12)
-        ax2.set_xlabel('Time (t)')
-        ax2.set_ylabel('Spot Price (S)')
-        ax2.set_zlabel('Option Price (V)')
+        style_3d_axis(ax2, 'PINN Prediction')
         
-        plt.tight_layout()
-        plt.subplots_adjust(top=0.88)
-        plt.savefig(os.path.join(save_dir, "3d_surface_comparison.png"))
+        plt.subplots_adjust(left=0.05, right=0.95, top=0.85, bottom=0.05, wspace=0.15)
+        plt.savefig(os.path.join(save_dir, "3d_surface_comparison.png"), dpi=120)
         plt.close()
         
         # =================================================================
         # Plot 2: Scatter Comparison
         # =================================================================
         plt.figure(figsize=(8, 8))
-        
         v_true_flat = V_true.flatten()
         v_pred_flat = V_pred.flatten()
         
@@ -313,7 +355,7 @@ class Visualizer:
         rmse = np.sqrt(np.mean((v_true_flat - v_pred_flat)**2))
         corr = np.corrcoef(v_true_flat, v_pred_flat)[0, 1] if np.std(v_true_flat) > 0 and np.std(v_pred_flat) > 0 else 0
         
-        plt.title(f'PINN vs. Analytical Predictions\n(RMSE: {rmse:.4f}, R: {corr:.4f})\n{param_text}', fontsize=12)
+        plt.title(f'Parity Plot (Epoch {epoch})\nRMSE: {rmse:.4f}, R: {corr:.4f}\n({param_text})', fontsize=12)
         plt.xlabel('PINN Prediction')
         plt.ylabel('Analytical Solution')
         plt.legend()
@@ -322,11 +364,85 @@ class Visualizer:
         plt.savefig(os.path.join(save_dir, "scatter_comparison.png"))
         plt.close()
 
+        # =================================================================
+        # Plot 3: 2D Payoff Slice at Maturity (The "Kink" Analysis)
+        # =================================================================
+        # We generate a dense slice exactly at t=0 (Maturity) to observe the hinge behavior
+        
+        n_slice = 200
+        S_slice_raw = np.linspace(fix_K * 0.5, fix_K * 1.5, n_slice) # Focus around K
+        t_slice_raw = np.zeros(n_slice) # t=0 (Maturity)
+        
+        # Prepare inputs for slice
+        X_slice = np.zeros((n_slice, 5))
+        X_slice[:, 0] = t_slice_raw
+        X_slice[:, 1] = S_slice_raw
+        X_slice[:, 2] = fix_sig
+        X_slice[:, 3] = fix_r
+        X_slice[:, 4] = fix_K
+        
+        # Normalize Slice
+        t_norm_s = (X_slice[:, 0] - c_m["t_range"][0]) / (c_m["t_range"][1] - c_m["t_range"][0])
+        S_norm_s = (X_slice[:, 1] - c_m["S_range"][0]) / (c_m["S_range"][1] - c_m["S_range"][0])
+        # Note: other params (sig, r, K) are constant, reused from normalized values above
+        sig_norm_s = np.full(n_slice, sig_norm[0]) 
+        r_norm_s = np.full(n_slice, r_norm[0])
+        K_norm_s = np.full(n_slice, K_norm[0])
+        
+        X_tensor_s = torch.tensor(
+            np.stack([t_norm_s, S_norm_s, sig_norm_s, r_norm_s, K_norm_s], axis=1), 
+            dtype=torch.float32
+        ).to(device)
+        
+        with torch.no_grad():
+            V_slice_pred = model(X_tensor_s).cpu().numpy().flatten() * fix_K
+            
+        # Analytical Payoff
+        # For t=0, Analytical should be exactly Max(S-K, 0) or Max(K-S, 0)
+        V_slice_true = self.physics.analytical_solution(t_slice_raw, S_slice_raw, fix_K, fix_r, fix_sig)
+        
+        # --- Metric: Kink Error (Deviation at Strike) ---
+        # We find the closest point to K and measure absolute error
+        idx_K = (np.abs(S_slice_raw - fix_K)).argmin()
+        val_pred_at_K = V_slice_pred[idx_K]
+        val_true_at_K = V_slice_true[idx_K]
+        kink_error = abs(val_pred_at_K - val_true_at_K)
+        
+        # Plotting
+        plt.figure(figsize=(10, 6))
+        
+        plt.plot(S_slice_raw, V_slice_true, label='Analytical (Payoff)', color='black', linewidth=1.5, alpha=0.7)
+        plt.plot(S_slice_raw, V_slice_pred, label='PINN Prediction', color='#ff7f0e', linestyle='--', linewidth=2.0)
+        
+        # Highlight the Kink
+        plt.scatter([S_slice_raw[idx_K]], [val_pred_at_K], color='red', zorder=5, s=50)
+        
+        # Styling
+        title_text = rf"Payoff at Maturity ($\tau=0$) & Kink Analysis"
+        metric_text = f"Pointwise Abs. Error at Strike ($S=K$): {kink_error:.5f}\n({param_text})"
+        
+        plt.title(f"{title_text}\n{metric_text}", fontsize=13)
+        plt.xlabel('Spot Price (S)')
+        plt.ylabel('Option Price (V)')
+        plt.legend()
+        plt.grid(True, linestyle=':', alpha=0.6)
+        
+        # Put Option Adjustment: Invert X-axis
+        # For Put: High S (OTM) is on Right, Low S (ITM) is on Left.
+        # Graph shape: \___
+        # By inverting X, High S goes to Left. Shape becomes ___/ which aligns with Call visual.
+        if is_put_option:
+            plt.gca().invert_xaxis()
 
+        
+        plt.tight_layout()
+        plt.savefig(os.path.join(save_dir, "payoff_at_maturity_kink.png"))
+        plt.close()
 
     def plot_loss_history(self, history, save_dir=None):
         """
         Generate detailed loss curves.
+        [Update]: Added 'Kink Loss' tracking to visualize hard attention learning.
         
         Args:
             history (dict): Loss history.
@@ -334,7 +450,7 @@ class Visualizer:
         """
         logging.info("Visualizer: Generating Post-training visualizations...")
         
-        plot_dir = save_dir if save_dir else self.run_dir
+        plot_dir = save_dir if save_dir else (self.run_dir if self.run_dir else ".")
         
         if len(history['total']) > 0:
             epochs = range(1, len(history['total']) + 1)
@@ -342,12 +458,11 @@ class Visualizer:
             # =================================================================
             # Plot 1: Detailed Curves (Linear Scale)
             # =================================================================
-            fig, axes = plt.subplots(6, 1, figsize=(12, 18), sharex=True)
+            # [Update]: Increased subplots to 7 to accommodate Kink Loss
+            # Adjusted figsize height to maintain readability (12x21)
+            fig, axes = plt.subplots(7, 1, figsize=(12, 21), sharex=True)
             
             # Helper to map Trainer keys to Plot labels
-            # Trainer keys: 'total', 'pde', 'data', 'ivp', 'bvp_total', 'bvp_min', 'bvp_max'
-            # We map 'bvp_min' -> BVP1, 'bvp_max' -> BVP2
-            
             def plot_metric(ax, data, color, label, title, y_label):
                 if len(data) == len(epochs):
                     ax.plot(epochs, data, color=color, label=label, linewidth=1.0)
@@ -356,17 +471,23 @@ class Visualizer:
                     ax.legend(loc='upper right')
                     ax.set_title(title, fontsize=10, pad=2)
 
+            # 1-4. Standard Losses
             plot_metric(axes[0], history['total'], '#1f77b4', 'Total Loss', 'Total Loss', 'Loss')
             plot_metric(axes[1], history['pde'], '#ff7f0e', 'PDE Loss', 'Physics (PDE) Loss', 'PDE Loss')
-            plot_metric(axes[2], history['data'], '#2ca02c', 'Data Loss', 'Total Data Loss (IVP + BVP)', 'Data Loss')
+            plot_metric(axes[2], history['data'], '#2ca02c', 'Data Loss', 'Total Data Loss (IVP + BVP + Kink)', 'Data Loss')
             plot_metric(axes[3], history['ivp'], '#d62728', 'IVP Loss', 'Initial Value Problem (t=0) Loss', 'IVP Loss')
             
-            # Handle key mapping safely
+            # 5-6. Boundary Conditions
             bvp1 = history.get('bvp_min', history.get('bvp1', []))
             bvp2 = history.get('bvp_max', history.get('bvp2', []))
             
             plot_metric(axes[4], bvp1, '#9467bd', 'BVP1 Loss', 'Lower Boundary Loss', 'BVP1 Loss')
             plot_metric(axes[5], bvp2, '#8c564b', 'BVP2 Loss', 'Upper Boundary Loss', 'BVP2 Loss')
+
+            # [Update]: 7. Kink Loss (Hard Attention)
+            # Using .get() ensures backward compatibility if 'kink' is missing from history
+            kink_loss = history.get('kink', [])
+            plot_metric(axes[6], kink_loss, "#840082ff", 'Kink Loss', 'Kink Hard Attention Loss (S=K)', 'Kink Loss')
 
             axes[-1].set_xlabel('Epoch')
             fig.suptitle('Detailed Training Curves (Linear Scale)', fontsize=16)
@@ -407,21 +528,3 @@ class Visualizer:
             flat_data[outliers_mask] = np.random.uniform(m_min, m_max, n_out)
         
         return flat_data.reshape(n, 1)
-
-    # Note: We need to ensure run_dir is stored if we want plot_loss_history to work without args.
-    # Re-defining init to capture run_dir passed from Trainer.
-    def __init__(self, config, physics_engine, run_dir):
-        """
-        Args:
-            config (dict): Global configuration.
-            physics_engine (OptionPhysics): For analytical solutions.
-            run_dir (str): Root directory for saving default plots.
-        """
-        self.config = config
-        self.physics = physics_engine
-        self.run_dir = run_dir
-        
-        # Cache
-        self.market = config['market']
-        self.sampling = config['sampling']
-        self.train_conf = config['training']

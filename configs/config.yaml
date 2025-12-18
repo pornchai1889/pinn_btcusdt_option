@@ -34,22 +34,31 @@ model:
   n_output: 1
   n_hidden: 256
   n_layers: 4
+  hidden_activation: "tanh"       # options: "tanh", "silu", "gelu", "relu", "sigmoid"...(default: tanh) 
+  output_activation: "softplus"   # options: "softplus", "relu", "identity"...(default: softplus) 
 
 # ------------------------------------------------------------------------------
 # 4. Training Hyperparameters
 # ------------------------------------------------------------------------------
 training:
-  mode: "scratch"
-  epochs: 50000
+  mode: "scratch" # Initialize with the original pre-trained model
+  epochs: 600000
   lr: 1.0e-4
   
   n_sample_data: 10000
-  n_sample_pde_multiplier: 4
-  physics_loss_weight: 0.1
+  n_sample_pde_multiplier: 4.0
+  n_sample_kink_multiplier: 0.5
+
+  # --- Loss Balancing Weights (The Recipe) ---
+  # Adjust these to prioritize different aspects of learning
+  physics_loss_weight: 1.0   # Base physics law (PDE)
+  ivp_loss_weight: 20.0      # Initial Condition (t=0), increased priority
+  bvp_loss_weight: 20.0      # Boundary Condition (S_min, S_max), increased priority
+  kink_loss_weight: 100.0    # Sharpness at Strike Price (S=K, t=0), highest priority
   
-  val_interval: 1000
+  val_interval: 1000         # Evaluate model every val_interval epochs
   n_val_sample: 100000
-  checkpoint_epochs: 1000
+  checkpoint_epochs: 10000   # Save model checkpoints every checkpoint
 
 # ------------------------------------------------------------------------------
 # 5. Validation Fixed Parameters (MOVE OUTSIDE TRAINING)
