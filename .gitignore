@@ -12,6 +12,7 @@ kline/
 
 # --- Experiment Tracking & Logs ---
 runs/
+backup/
 
 # Data log
 *.log
