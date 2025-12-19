@@ -16,17 +16,17 @@ class TrainingLogger:
         
         # 1. Acronyms: These keys will always be converted to UPPERCASE.
         self.acronyms = {
-            'rmse', 'mae', 'smape', 'pde', 'ivp', 'bvp', 'l2', 'h1', 'r'
+            'rmse', 'mae', 'smape', 'pde', 'ivp', 'bvp', 'l2', 'h1', 'mse', 'nn', 'dl', 'ft'
         }
         
         # 2. Tag Overrides: Specific mapping for keys.
         self.tag_overrides = {
-            'data': 'Data_Total',
-            'bvp_min': 'BVP1_Min',
-            'bvp_max': 'BVP2_Max',
-            'r_score': 'R',
-            'kink_mae': 'Kink_MAE',
-            'bvp_total': 'BVP_Total'
+            'data': 'Data Total',
+            'bvp_min': 'BVP1 Min',
+            'bvp_max': 'BVP2 Max',
+            'r_score': 'Corr',
+            'bvp_total': 'BVP Total',
+            
         }
         
         # 3. Display Order Configuration (Moved from method to init)
@@ -83,7 +83,7 @@ class TrainingLogger:
 
         for key, value in losses.items():
             # Determine Group based on importance
-            group = "Loss" if key in main_keys_set else "Loss_Detail"
+            group = "Loss" if key in main_keys_set else "Loss Detail"
             
             # Format Name
             pretty_name = self._format_tag_name(key)
@@ -99,7 +99,7 @@ class TrainingLogger:
         # --- 1. TensorBoard Logging (Dynamic Loop) ---
         for key, value in metrics.items():
             pretty_name = self._format_tag_name(key)
-            self.writer.add_scalar(f'Metrics_Ratio/{pretty_name}', value, epoch)
+            self.writer.add_scalar(f'Metrics Ratio/{pretty_name}', value, epoch)
 
         # --- 2. Console Logging (Dynamic & Ordered) ---
         

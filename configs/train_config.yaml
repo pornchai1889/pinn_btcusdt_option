@@ -1,4 +1,4 @@
-# configs/config.yaml
+# configs/train_config.yaml
 
 experiment:
   name: "call" # "call" or "put" Option for modeling
@@ -10,11 +10,11 @@ device: "cuda:0"
 # 1. Market Parameters
 # ------------------------------------------------------------------------------
 market:
-  T_MAX: 0.25
+  T_MAX: 0.26
   S_range: [0.0, 1000000.0]
   K_range: [10000.0, 500000.0]
   K_step: 1000.0
-  t_range: [0.0, 0.25]
+  t_range: [0.0, 0.26] # 0 - T_MAX
   sigma_range: [0.1, 2.0]
   r_range: [0.0, 0.15]
 

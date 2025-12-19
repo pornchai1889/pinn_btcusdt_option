@@ -1,0 +1,20 @@
+# configs/eval_real_market.yaml
+
+paths:
+  # Path to the training run folder containing the model checkpoint
+  run_folder: "runs/train_2025-12-19_20-42-18_put/checkpoints/epoch_40000"
+  
+  # Model filename (usually model.pth)
+  model_filename: "model.pth"
+  
+  # Directory containing Raw CSV files
+  data_raw_dir: "backup/raw"
+  
+  # Output directory for evaluation results (created inside run_folder)
+  output_dirname: "eval_results"
+  
+financial:
+  risk_free_rate: 0.05
+  
+  # Number of days to look back for volatility calculation
+  lookback_days: 7

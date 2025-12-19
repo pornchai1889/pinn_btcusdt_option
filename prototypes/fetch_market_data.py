@@ -7,10 +7,10 @@ import pytz
 import time as t_module
 
 # ==========================================
-# CONFIGURATION (ตั้งค่าที่นี่)
+# CONFIGURATION
 # ==========================================
-TARGET_OPTION_SYMBOL = 'BTC-251206-89000-C'
-TIME_INTERVAL = '30m'  
+TARGET_OPTION_SYMBOL = 'BTC-251226-100000-C'
+TIME_INTERVAL = '2h'  
 # ==========================================
 
 MILLISECONDS_IN_YEAR = 365 * 24 * 60 * 60 * 1000
@@ -89,7 +89,7 @@ def fetch_klines_forward_robust(url, symbol, interval, start_ms, end_ms):
             'symbol': symbol,
             'interval': interval,
             'startTime': current_start,
-            'limit': 1000 
+            'limit': 1000
         }
         
         try:

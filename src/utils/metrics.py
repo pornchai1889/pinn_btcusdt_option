@@ -38,7 +38,7 @@ class MetricsCalculator:
     @staticmethod
     def compute_all_metrics(true, pred):
         """
-        Computes standard regression metrics: RMSE, MAE, SMAPE, Bias, R, Max Error.
+        Computes standard regression metrics: RMSE, MAE, SMAPE, Bias, Corr, Max Error.
         """
         diff = pred - true
         abs_diff = np.abs(diff)
@@ -55,7 +55,7 @@ class MetricsCalculator:
         # 4. Bias
         bias = np.mean(diff)
         
-        # 5. R
+        # 5. Corr
         if np.std(true) == 0 or np.std(pred) == 0:
             r_score = 0.0
         else:

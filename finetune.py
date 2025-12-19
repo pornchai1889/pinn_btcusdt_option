@@ -69,7 +69,7 @@ def main():
     # ==========================================
     # 1. Setup Logic & Directory Structure
     # ==========================================
-    ft_config_path = "configs/ft_config.yaml"
+    ft_config_path = "configs/finetune_config.yaml"
     ft_config = load_config(ft_config_path)
     
     # The directory we want to fine-tune FROM

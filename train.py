@@ -27,7 +27,7 @@ def main():
     # ==========================================
     # 1. Configuration & Environment Setup
     # ==========================================
-    config_path = "configs/config.yaml"
+    config_path = "configs/train_config.yaml"
     config = load_config(config_path)
     
     # Setup Run Directory

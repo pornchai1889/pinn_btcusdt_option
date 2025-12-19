@@ -355,7 +355,7 @@ class Visualizer:
         rmse = np.sqrt(np.mean((v_true_flat - v_pred_flat)**2))
         corr = np.corrcoef(v_true_flat, v_pred_flat)[0, 1] if np.std(v_true_flat) > 0 and np.std(v_pred_flat) > 0 else 0
         
-        plt.title(f'Parity Plot (Epoch {epoch})\nRMSE: {rmse:.4f}, R: {corr:.4f}\n({param_text})', fontsize=12)
+        plt.title(f'Parity Plot (Epoch {epoch})\nRMSE: {rmse:.4f}, Corr: {corr:.4f}\n({param_text})', fontsize=12)
         plt.xlabel('PINN Prediction')
         plt.ylabel('Analytical Solution')
         plt.legend()
@@ -475,7 +475,7 @@ class Visualizer:
             plot_metric(axes[0], history['total'], '#1f77b4', 'Total Loss', 'Total Loss', 'Loss')
             plot_metric(axes[1], history['pde'], '#ff7f0e', 'PDE Loss', 'Physics (PDE) Loss', 'PDE Loss')
             plot_metric(axes[2], history['data'], '#2ca02c', 'Data Loss', 'Total Data Loss (IVP + BVP + Kink)', 'Data Loss')
-            plot_metric(axes[3], history['ivp'], '#d62728', 'IVP Loss', 'Initial Value Problem (t=0) Loss', 'IVP Loss')
+            plot_metric(axes[3], history['ivp'], '#d62728', 'IVP Loss', r'Initial Value Points ($\tau=0$) Loss', 'IVP Loss')
             
             # 5-6. Boundary Conditions
             bvp1 = history.get('bvp_min', history.get('bvp1', []))
@@ -487,10 +487,10 @@ class Visualizer:
             # [Update]: 7. Kink Loss (Hard Attention)
             # Using .get() ensures backward compatibility if 'kink' is missing from history
             kink_loss = history.get('kink', [])
-            plot_metric(axes[6], kink_loss, "#840082ff", 'Kink Loss', 'Kink Hard Attention Loss (S=K)', 'Kink Loss')
+            plot_metric(axes[6], kink_loss, "#840082ff", 'Kink Loss', 'Kink Hard Attention Loss ($S=K$)', 'Kink Loss')
 
             axes[-1].set_xlabel('Epoch')
-            fig.suptitle('Detailed Training Curves (Linear Scale)', fontsize=16)
+            fig.suptitle('Detailed Training Curves', fontsize=16)
             plt.tight_layout(rect=[0, 0.03, 1, 0.97])
             plt.savefig(os.path.join(plot_dir, "detailed_training_curves.png"))
             plt.close()
