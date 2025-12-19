@@ -1,0 +1,12 @@
+# configs/data_fetch_market.yaml
+fetch:
+  symbol: 'BTC-251226-90000-P' # C = Call Option, P = Put Option
+  interval: '1h' # '1m', '5m', '15m', '30m', '1h', '2h', '4h', '6h', '8h', '12h', '1d', '3d', '1w', '1M'
+  base_asset: 'BTCUSDT'
+  output_dir: 'data/raw'
+
+api:
+  option_url: "https://eapi.binance.com/eapi/v1/klines"
+  spot_url: "https://api.binance.com/api/v3/klines"
+  limit: 1000
+  timeout: 10
