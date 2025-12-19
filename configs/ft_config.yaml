@@ -22,4 +22,6 @@ fine_tune_params:
   
   # Validation
   val_interval: 1000
+  n_val_sample: 100000
+  n_kink_val_sample: 2000
   checkpoint_epochs: 10000

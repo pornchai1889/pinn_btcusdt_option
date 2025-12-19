@@ -67,23 +67,42 @@ class Trainer:
                 self.model.load_state_dict(torch.load(checkpoint_path, map_location=self.device))
             else:
                 raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
-
+            
     def _prepare_validation_set(self):
-        """Pre-calculate Validation Ground Truth."""
-        logging.info("Generating fixed validation set...")
-        n_val = self.config['training']['n_val_sample']
+        """
+        Pre-calculate Validation Sets (General & Kink) and their Ground Truths.
+        Executed once at initialization to minimize overhead during training loops.
+        """
+        conf_train = self.config['training']
+        
+        # --- 1. General Validation Set (Monte Carlo) ---
+        n_val = conf_train.get('n_val_sample', 20000)
+        logging.info(f"Generating fixed General validation set ({n_val} samples)...")
+        
+        # Generate & Transfer to Device
         self.val_data_norm = self.data_gen.get_validation_batch(n_val)
         self.val_tensor = torch.from_numpy(self.val_data_norm).float().to(self.device)
         
-        # Denormalize to calculate True V
+        # Calculate Ground Truth (General)
         t, S, sigma, r, K = self.data_gen.norm.denormalize_batch(self.val_data_norm)
         self.val_K = K
+        val_V_true = self.physics.analytical_solution(t, S, K, r, sigma)
         
-        # Analytical Solution
-        self.val_V_true = self.physics.analytical_solution(t, S, K, r, sigma)
+        # Store Ratio for metrics (V/K)
+        # Flattening here ensures consistency with prediction output
+        self.val_ratio_true = (val_V_true / (self.val_K + 1e-8)).flatten()
+
+        # --- 2. Kink Validation Set (Targeted Hard Attention) ---
+        # Defaults to 2000 if 'n_val_kink' is not yet in config
+        n_kink_val = conf_train.get('n_kink_val_sample', 2000)
+        logging.info(f"Generating fixed Kink validation set ({n_kink_val} samples)...")
         
-        # Ratio for metrics (V/K)
-        self.val_ratio_true = self.val_V_true / (self.val_K + 1e-8)
+        kink_x_np = self.data_gen.get_kink_batch(n_kink_val)
+        self.val_kink_tensor = torch.from_numpy(kink_x_np).float().to(self.device)
+        
+        # Ground Truth for Kink (S=K, t=0) is always 0.
+        # Pre-allocating array avoids recreating it every epoch.
+        self.val_kink_true = np.zeros(n_kink_val, dtype=np.float32)
 
     def train(self):
         """Main execution loop."""
@@ -196,16 +215,32 @@ class Trainer:
         }
 
     def _validate(self, epoch, loss_dict):
-        """Validation routine using MetricsCalculator."""
+        """
+        Validation routine using MetricsCalculator.
+        Uses pre-calculated tensors for efficiency.
+        """
         self.model.eval()
         with torch.no_grad():
+            # ---------------------------------------------------------
+            # 1. Standard Global Validation
+            # ---------------------------------------------------------
+            # Inference
             val_pred_ratio = self.model(self.val_tensor).cpu().numpy().flatten()
-            val_true_ratio = self.val_ratio_true.flatten()
             
-            # Compute Metrics
-            metrics = MetricsCalculator.compute_all_metrics(val_true_ratio, val_pred_ratio)
+            # Compute Standard Metrics (Comparing against pre-calc true values)
+            metrics = MetricsCalculator.compute_all_metrics(self.val_ratio_true, val_pred_ratio)
             
-            # Log
+            # ---------------------------------------------------------
+            # 2. Kink-Specific Validation
+            # ---------------------------------------------------------
+            # Inference on specific Kink batch
+            pred_kink_ratio = self.model(self.val_kink_tensor).cpu().numpy().flatten()
+            
+            # Compute Kink Metrics (Comparing against pre-calc zeros)
+            kink_metrics = MetricsCalculator.compute_kink_metrics(self.val_kink_true, pred_kink_ratio)
+            
+            # Merge & Log
+            metrics.update(kink_metrics)
             self.logger.log_validation_metrics(epoch, metrics, loss_dict)
 
     def _save_snapshot(self, tag, is_final=False):

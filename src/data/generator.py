@@ -163,7 +163,7 @@ class DataGenerator:
         """
         # 1. Reuse IVP logic to get valid distributions for sigma, r, K
         # We don't care about the S and t returned here, just the params
-        raw_ivp = self.get_ivp_batch(n_samples)[0] # Returns [t, S, sig, r, K] 
+        raw_ivp = self.get_ivp_batch(n_samples)[0] # Return only [t, S, sig, r, K] values 
         # At t = 0, S = K: Call Option: V = max(S - K, 0) = max(0, 0) = 0
         # At t = 0, S = K: Put Option: V = max(K - S, 0) = max(0, 0) = 0
         

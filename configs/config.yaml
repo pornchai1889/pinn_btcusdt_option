@@ -58,6 +58,7 @@ training:
   
   val_interval: 1000         # Evaluate model every val_interval epochs
   n_val_sample: 100000
+  n_kink_val_sample: 2000
   checkpoint_epochs: 10000   # Save model checkpoints every checkpoint
 
 # ------------------------------------------------------------------------------
