@@ -1,3 +1,4 @@
+# src/models/pinn_net.py
 import torch.nn as nn
 import logging
 

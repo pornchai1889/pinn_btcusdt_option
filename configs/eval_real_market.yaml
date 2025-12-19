@@ -1,5 +1,4 @@
 # configs/eval_real_market.yaml
-
 paths:
   # Path to the training run folder containing the model checkpoint
   run_folder: "runs/train_2025-12-19_20-42-18_put/checkpoints/epoch_40000"

@@ -1,3 +1,4 @@
+# src/core/trainer.py
 import os
 import logging
 import torch
