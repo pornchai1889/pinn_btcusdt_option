@@ -8,11 +8,14 @@ env/
 .env
 
 # --- Data ---
-kline/
+/data/
+# Clear config folder contents but preserve directory structure using .gitkeep
+!/data/.gitkeep
 
 # --- Experiment Tracking & Logs ---
-runs/
-backup/
+/runs/
+!/runs/.gitkeep
+/backup/
 
 # Data log
 *.log
