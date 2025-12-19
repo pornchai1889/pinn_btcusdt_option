@@ -5,54 +5,140 @@ class TrainingLogger:
     """
     Wrapper for TensorBoard and Standard Logging.
     
-    [Update]: Added logging support for 'Kink Loss' to track 
-    sharpness learning progress at the strike price.
+    [Update]: Refactored for performance and stability.
+    - Configuration lists moved to __init__ for better state management.
+    - Helper functions extracted to private methods to reduce overhead.
+    - Maintains dynamic 'Catch-all' logic for future-proofing.
     """
     def __init__(self, log_dir):
         self.writer = SummaryWriter(log_dir=log_dir)
         self.log_dir = log_dir
+        
+        # 1. Acronyms: These keys will always be converted to UPPERCASE.
+        self.acronyms = {
+            'rmse', 'mae', 'smape', 'pde', 'ivp', 'bvp', 'l2', 'h1', 'r'
+        }
+        
+        # 2. Tag Overrides: Specific mapping for keys.
+        self.tag_overrides = {
+            'data': 'Data_Total',
+            'bvp_min': 'BVP1_Min',
+            'bvp_max': 'BVP2_Max',
+            'r_score': 'R',
+            'kink_mae': 'Kink_MAE',
+            'bvp_total': 'BVP_Total'
+        }
+        
+        # 3. Display Order Configuration (Moved from method to init)
+        # Defines the priority order for console logging.
+        self.main_loss_order = ['total', 'data', 'pde']
+        self.detail_loss_order = ['ivp', 'bvp_total', 'bvp_min', 'bvp_max', 'kink']
+        self.metric_order = ['smape', 'rmse', 'kink_mae', 'r_score', 'mae', 'bias', 'max_error']
+
+    def _format_tag_name(self, key):
+        """
+        Helper to format keys into professional Chart Titles.
+        Priority: Overrides > Acronyms > Title Case.
+        """
+        if key in self.tag_overrides:
+            return self.tag_overrides[key]
+            
+        if key.lower() in self.acronyms or len(key) <= 3:
+            return key.upper()
+            
+        return key.replace('_', ' ').title()
+
+    def _build_string_parts(self, data_dict, priority_keys, precision=".8f"):
+        """
+        Internal helper to format a subset of dictionary items into string parts.
+        Returns:
+            parts (list): List of formatted strings ["Key:Val", ...]
+            processed (set): Set of keys that were processed (to handle leftovers later)
+        """
+        parts = []
+        processed = set()
+        
+        # Process Priority Keys first
+        for key in priority_keys:
+            if key in data_dict:
+                name = self._format_tag_name(key)
+                val = data_dict[key]
+                
+                # Apply specific formatting rules
+                if key == 'smape':
+                    parts.append(f"{name}:{val:.2f}%")
+                else:
+                    parts.append(f"{name}:{val:{precision}}")
+                
+                processed.add(key)
+        
+        return parts, processed
 
     def log_training_loss(self, epoch, losses):
         """
-        Log training losses to TensorBoard.
-        Args:
-            epoch (int): Current epoch.
-            losses (dict): Dictionary of loss components.
+        Log training losses to TensorBoard using a dynamic loop.
         """
-        # Main Losses
-        self.writer.add_scalar('Loss/Total', losses['total'], epoch)
-        self.writer.add_scalar('Loss/PDE', losses['pde'], epoch)
-        self.writer.add_scalar('Loss/Data_Total', losses['data'], epoch)
-        
-        # Detailed Components
-        self.writer.add_scalar('Loss_Detail/IVP', losses['ivp'], epoch)
-        self.writer.add_scalar('Loss_Detail/BVP_Total', losses['bvp_total'], epoch)
-        self.writer.add_scalar('Loss_Detail/BVP1_Min', losses['bvp_min'], epoch)
-        self.writer.add_scalar('Loss_Detail/BVP2_Max', losses['bvp_max'], epoch)
-        
-        # [Added] Track Kink Loss specifically
-        if 'kink' in losses:
-            self.writer.add_scalar('Loss_Detail/Kink', losses['kink'], epoch)
+        # Define keys that belong to the Main "Loss" group
+        main_keys_set = set(self.main_loss_order)
+
+        for key, value in losses.items():
+            # Determine Group based on importance
+            group = "Loss" if key in main_keys_set else "Loss_Detail"
+            
+            # Format Name
+            pretty_name = self._format_tag_name(key)
+            
+            # Log to TensorBoard
+            self.writer.add_scalar(f'{group}/{pretty_name}', value, epoch)
 
     def log_validation_metrics(self, epoch, metrics, losses):
         """
         Log validation metrics to TensorBoard and Console.
+        Uses optimized class-level configurations and helper methods.
         """
-        # TensorBoard
+        # --- 1. TensorBoard Logging (Dynamic Loop) ---
         for key, value in metrics.items():
-            # Format key (e.g., rmse -> RMSE)
-            tag = f'Metrics_Ratio/{key.upper() if len(key) <= 3 else key.replace("_", " ").title()}'
-            self.writer.add_scalar(tag, value, epoch)
+            pretty_name = self._format_tag_name(key)
+            self.writer.add_scalar(f'Metrics_Ratio/{pretty_name}', value, epoch)
 
-        # Console Log
-        # [Update]: Added 'Kink' to the loss breakdown for real-time monitoring
-        kink_loss_str = f" Kink:{losses['kink']:.8f}" if 'kink' in losses else ""
+        # --- 2. Console Logging (Dynamic & Ordered) ---
         
+        # A. Build Main Losses String
+        main_parts, processed_main = self._build_string_parts(
+            losses, self.main_loss_order, precision=".8f"
+        )
+
+        # B. Build Detailed Losses String
+        # B1. Priority Details
+        detail_parts, processed_details = self._build_string_parts(
+            losses, self.detail_loss_order, precision=".8f"
+        )
+        
+        # B2. Catch-all for leftovers (Dynamic Loss Logging)
+        # Adds any loss that wasn't in Main OR Detail priority lists.
+        for key, val in losses.items():
+            if key not in processed_main and key not in processed_details:
+                name = self._format_tag_name(key)
+                detail_parts.append(f"{name}:{val:.8f}")
+
+        # C. Build Metrics String
+        # C1. Priority Metrics
+        metric_parts, processed_metrics = self._build_string_parts(
+            metrics, self.metric_order, precision=".4f"
+        )
+        
+        # C2. Dynamic Metrics (Catch-all for experimental metrics)
+        for key, val in metrics.items():
+            if key not in processed_metrics:
+                name = self._format_tag_name(key)
+                metric_parts.append(f"{name}:{val:.4f}")
+
+        # Construct the final log message using join() for clean spacing
         log_msg = (
             f"Epoch {epoch:5d} | "
-            f"Loss: {losses['total']:.8f} (PDE:{losses['pde']:.8f} Data:{losses['data']:.8f}{kink_loss_str}) | "
-            f"Val(Ratio): [RMSE:{metrics['rmse']:.4f} MAE:{metrics['mae']:.4f} SMAPE:{metrics['smape']:.2f}% "
-            f"R:{metrics['r_score']:.4f}]"
+            f"Main Losses: [{' '.join(main_parts)}] | "
+            f"Detailed: [{' '.join(detail_parts)}] | "
+            f"Val(Ratio): [{' '.join(metric_parts)}]"
         )
         logging.info(log_msg)
 

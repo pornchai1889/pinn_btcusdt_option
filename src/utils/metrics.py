@@ -13,18 +13,32 @@ class MetricsCalculator:
         """
         denominator = (np.abs(true) + np.abs(pred)) / 2.0
         diff = np.abs(true - pred)
-        # Avoid division by zero with small epsilon
         return np.mean(diff / (denominator + 1e-8)) * 100
+
+    @staticmethod
+    def compute_kink_metrics(true_at_kink, pred_at_kink):
+        """
+        [New] Computes specific metrics for the Kink point (S=K, t=0).
+        Args:
+            true_at_kink (np.array): Ground truth at Kink (should be all 0s).
+            pred_at_kink (np.array): Predicted values at Kink.
+        Returns:
+            dict: Dictionary with Kink-specific metrics.
+        """
+        diff = pred_at_kink - true_at_kink
+        abs_diff = np.abs(diff)
+        
+        # Calculate MAE specifically for Kink (Mean Absolute Error)
+        kink_mae = np.mean(abs_diff)
+        
+        return {
+            "kink_mae": kink_mae
+        }
 
     @staticmethod
     def compute_all_metrics(true, pred):
         """
         Computes standard regression metrics: RMSE, MAE, SMAPE, Bias, R, Max Error.
-        Args:
-            true (np.array): Ground truth values (e.g., V/K ratio).
-            pred (np.array): Predicted values.
-        Returns:
-            dict: Dictionary containing all metrics.
         """
         diff = pred - true
         abs_diff = np.abs(diff)
@@ -38,11 +52,10 @@ class MetricsCalculator:
         # 3. SMAPE
         smape = MetricsCalculator.calculate_smape(true, pred)
         
-        # 4. Bias (Mean Signed Difference)
+        # 4. Bias
         bias = np.mean(diff)
         
-        # 5. R (Correlation Coefficient)
-        # Handle potential constant arrays to avoid NaN
+        # 5. R
         if np.std(true) == 0 or np.std(pred) == 0:
             r_score = 0.0
         else:
