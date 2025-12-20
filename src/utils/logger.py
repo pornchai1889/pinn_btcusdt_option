@@ -1,3 +1,4 @@
+# src/utils/logger.py
 import logging
 from torch.utils.tensorboard import SummaryWriter
 
@@ -26,7 +27,7 @@ class TrainingLogger:
             'bvp_max': 'BVP2 Max',
             'r_score': 'Corr',
             'bvp_total': 'BVP Total',
-            
+            'kink_mae': 'Kink MAE'
         }
         
         # 3. Display Order Configuration (Moved from method to init)

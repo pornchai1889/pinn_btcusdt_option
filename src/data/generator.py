@@ -1,3 +1,4 @@
+# src/data/generator.py
 import numpy as np
 from .normalizer import MarketNormalizer
 

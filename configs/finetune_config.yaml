@@ -1,6 +1,5 @@
 # configs/ft_config.yaml
 # Configuration for Fine-tuning an existing model
-
 base_run_dir: "runs/train_2025-12-19_20-42-18_put/checkpoints/epoch_40000"  # <--- Model path
 model_checkpoint: "model.pth"      
 device: "cuda:0"  # <--- ("cuda" or "cpu")

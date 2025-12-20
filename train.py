@@ -1,3 +1,4 @@
+# train.py
 import os
 import yaml
 import logging
@@ -96,7 +97,7 @@ def main():
             data_generator=data_gen,
             visualizer=viz,     # Inject visualizer for checkpoints
             run_dir=run_dir,
-            mode='scratch'      # Use 'finetune' and provide checkpoint_path if needed
+            mode='scratch'   
         )
 
         # ==========================================

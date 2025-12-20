@@ -1,5 +1,4 @@
 # configs/train_config.yaml
-
 experiment:
   name: "call" # "call" or "put" Option for modeling
   description: "PINN for Bitcoin Option Pricing using Mixed Distribution Sampling"
@@ -42,7 +41,7 @@ model:
 # ------------------------------------------------------------------------------
 training:
   mode: "scratch" # Initialize with the original pre-trained model
-  epochs: 600000
+  epochs: 100000
   lr: 1.0e-4
   
   n_sample_data: 10000
