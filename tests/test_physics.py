@@ -84,15 +84,18 @@ class TestCallOptionPhysics:
         Checks both In-The-Money (ITM) and Out-Of-The-Money (OTM) scenarios.
         """
         K = 100.0
+        # [Fixed]: Wrap K in numpy array to satisfy Mypy strict typing.
+        # Since 's_itm' is a numpy array, 'K' must also be an array/tensor, not float.
+        K_arr = np.array([K])
 
         # Case 1: ITM (S > K) -> Payoff = 20
         s_itm = np.array([120.0])
-        val_itm = call_engine.payoff(s_itm, K)
+        val_itm = call_engine.payoff(s_itm, K_arr)
         np.testing.assert_allclose(val_itm, 20.0, err_msg="Call ITM Payoff incorrect")
 
         # Case 2: OTM (S < K) -> Payoff = 0
         s_otm = np.array([80.0])
-        val_otm = call_engine.payoff(s_otm, K)
+        val_otm = call_engine.payoff(s_otm, K_arr)
         np.testing.assert_allclose(val_otm, 0.0, err_msg="Call OTM Payoff must be 0")
 
     def test_boundary_lower(self, call_engine: CallOption) -> None:
@@ -107,9 +110,7 @@ class TestCallOptionPhysics:
         # Function expects t, r, K (S is implicitly 0 for lower bound function)
         val = call_engine.boundary_condition_lower(t, r, K)
 
-        assert torch.all(
-            val == 0
-        ), "Lower boundary for Call Option must be exactly 0"  # Validates that the condition is True; raises an AssertionError if False.
+        assert torch.all(val == 0), "Lower boundary for Call Option must be exactly 0"
 
     def test_analytical_accuracy(self, call_engine: CallOption) -> None:
         """
@@ -136,7 +137,7 @@ class TestCallOptionPhysics:
             project_prices,
             ref_prices,
             rtol=1e-5,
-            atol=1e-5,  # rtol handles large values (e.g., high asset price), atol handles values near zero (e.g., OTM price)
+            atol=1e-5,
             err_msg="Call Option Analytical Solution diverges from Scipy Benchmark!",
         )
 
@@ -151,15 +152,17 @@ class TestPutOptionPhysics:
         Verifies the Put Option Payoff: max(K - S, 0).
         """
         K = 100.0
+        # [Fixed]: Wrap K in numpy array to satisfy Mypy strict typing.
+        K_arr = np.array([K])
 
         # Case 1: ITM (S < K) -> Payoff = 20
         s_itm = np.array([80.0])
-        val_itm = put_engine.payoff(s_itm, K)
+        val_itm = put_engine.payoff(s_itm, K_arr)
         np.testing.assert_allclose(val_itm, 20.0, err_msg="Put ITM Payoff incorrect")
 
         # Case 2: OTM (S > K) -> Payoff = 0
         s_otm = np.array([120.0])
-        val_otm = put_engine.payoff(s_otm, K)
+        val_otm = put_engine.payoff(s_otm, K_arr)
         np.testing.assert_allclose(val_otm, 0.0, err_msg="Put OTM Payoff must be 0")
 
     def test_boundary_lower(self, put_engine: PutOption) -> None:
@@ -183,7 +186,6 @@ class TestPutOptionPhysics:
         val_expected = K_val * np.exp(-r_val * t_val)
 
         # Check closeness
-        # FIX: Explicitly cast expected value to float32 to match PyTorch tensor type
         assert torch.isclose(
             val_project, torch.tensor(val_expected, dtype=torch.float32), atol=1e-5
         ), "Lower boundary for Put Option should approach PV(K)"

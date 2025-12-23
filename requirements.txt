@@ -32,3 +32,8 @@ pytest-cov>=4.1.0       # Coverage plugin for pytest
 black>=23.9.0           # Uncompromising code formatter
 flake8>=6.1.0           # Style guide enforcement (Linting)
 mypy>=1.5.0             # Static type checker
+
+# --- Type Stubs (Mypy Support) ---
+# Required for static type checking of libraries that don't include types by default
+types-pytz>=2023.3.0.0  # Type definitions for pytz
+types-requests>=2.31.0.0 # Type definitions for requests

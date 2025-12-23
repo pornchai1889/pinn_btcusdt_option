@@ -66,7 +66,7 @@ class Trainer:
 
         # Track history for post-training plots
         # Added 'kink' to track the specific loss for the strike price point
-        self.history = {
+        self.history: Dict[str, List[float]] = {
             "total": [],
             "pde": [],
             "data": [],
@@ -105,7 +105,9 @@ class Trainer:
         self.val_tensor = torch.from_numpy(self.val_data_norm).float().to(self.device)
 
         # Calculate Ground Truth (General)
-        t, S, sigma, r, K = self.data_gen.norm.denormalize_batch(self.val_data_norm)
+        batch_denorm = self.data_gen.norm.denormalize_batch(self.val_data_norm)
+        t, S, sigma, r, K = [np.asarray(x) for x in batch_denorm]
+
         self.val_K = K
         val_V_true = self.physics.analytical_solution(t, S, K, r, sigma)
 

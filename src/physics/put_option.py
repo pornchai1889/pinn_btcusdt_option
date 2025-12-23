@@ -43,7 +43,11 @@ class PutOption(OptionPhysics):
         """
         # Handle both PyTorch Tensors and NumPy arrays
         if isinstance(S, torch.Tensor):
-            return torch.maximum(K - S, torch.tensor(0.0, device=S.device))
+            # Explicitly cast K to Tensor to satisfy Mypy strict type checking for torch.maximum
+            K_t = torch.as_tensor(K, device=S.device, dtype=S.dtype)
+            zero_t = torch.tensor(0.0, device=S.device, dtype=S.dtype)
+            return torch.maximum(K_t - S, zero_t)
+
         return np.maximum(K - S, 0)
 
     def boundary_condition_lower(

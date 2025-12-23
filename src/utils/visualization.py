@@ -707,7 +707,7 @@ class Visualizer:
 
             axes[-1].set_xlabel("Epoch")
             fig.suptitle("Detailed Training Curves", fontsize=16)
-            plt.tight_layout(rect=[0, 0.03, 1, 0.97])
+            plt.tight_layout(rect=(0, 0.03, 1, 0.95))
             plt.savefig(os.path.join(plot_dir, "detailed_training_curves.png"))
             plt.close()
 
