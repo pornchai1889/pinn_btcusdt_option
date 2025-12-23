@@ -38,3 +38,4 @@ mypy>=1.5.0             # Static type checker
 # Required for static type checking of libraries that don't include types by default
 types-pytz>=2023.3.0.0  # Type definitions for pytz
 types-requests>=2.31.0.0 # Type definitions for requests
+types-PyYAML>=6.0.12.12 # Type definitions for PyYAML (Fixes Mypy import error)

@@ -56,7 +56,8 @@ class Settings(BaseSettings):
 
 # Singleton Instance
 try:
-    settings = Settings()
+    # [Fixed] Add type: ignore to silence Mypy about missing arguments (Pydantic loads them from env)
+    settings = Settings()  # type: ignore
     logger.info("Configuration loaded successfully.")
 except Exception as e:
     logger.critical(f"Failed to load configuration: {e}")
