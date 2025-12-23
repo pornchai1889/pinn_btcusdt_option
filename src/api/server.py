@@ -23,7 +23,7 @@ from src.api.config import settings  # <--- Import Settings here
 # Setup Logger
 logging.basicConfig(
     level=logging.DEBUG if settings.DEBUG_MODE else logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger("PINN_Server")
 
@@ -35,28 +35,29 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     Initializes the Inference Engine using paths from Configuration.
     """
     logger.info(f"--- Starting {settings.APP_NAME} v{settings.APP_VERSION} ---")
-    
+
     # Determine Device
     device_str = settings.DEVICE
     if device_str == "auto":
         device_str = "cuda" if torch.cuda.is_available() else "cpu"
     logger.info(f"Compute Device: {device_str}")
-    
+
     # Initialize Global Inference Engine
     import src.api.services as services
+
     try:
         services.inference_engine = InferenceEngine(
             call_model_dir=settings.CALL_MODEL_DIR,
             put_model_dir=settings.PUT_MODEL_DIR,
-            device_str=device_str
+            device_str=device_str,
         )
         logger.info("Inference Engine successfully loaded.")
     except Exception as e:
         logger.critical(f"Startup Failed: {e}")
         # In production, you might want to exit here, but for now we let it run (unhealthy state)
-    
+
     yield
-    
+
     logger.info("--- Shutting down ---")
     services.inference_engine = None
     if torch.cuda.is_available():
@@ -85,10 +86,11 @@ def create_app() -> FastAPI:
         return {
             "app": settings.APP_NAME,
             "status": "online",
-            "version": settings.APP_VERSION
+            "version": settings.APP_VERSION,
         }
 
     return app
+
 
 app = create_app()
 
@@ -97,5 +99,5 @@ if __name__ == "__main__":
         "src.api.server:app",
         host=settings.API_HOST,
         port=settings.API_PORT,
-        reload=settings.DEBUG_MODE
+        reload=settings.DEBUG_MODE,
     )

@@ -32,16 +32,16 @@ class ModelBundle:
     def __init__(self, run_dir: str, device: torch.device):
         self.device = device
         self.run_dir = Path(run_dir)
-        
+
         # 1. Load Configuration
         self.config = self._load_config()
-        
+
         # 2. Initialize Normalizer (Crucial for correct input scaling)
         self.normalizer = MarketNormalizer(self.config)
-        
+
         # 3. Load Model Architecture & Weights
         self.model = self._load_model()
-        
+
         # Cache Normalization Ranges for efficient Chain Rule calculations (Greeks)
         self._cache_ranges()
 
@@ -51,7 +51,7 @@ class ModelBundle:
         if not config_path.exists():
             # Fallback to config.json if yaml is missing
             config_path = self.run_dir / "config.json"
-        
+
         if not config_path.exists():
             raise FileNotFoundError(f"Configuration file not found in {self.run_dir}")
 
@@ -61,34 +61,34 @@ class ModelBundle:
     def _load_model(self) -> UniversalPINN:
         """Initializes the PINN and loads pre-trained weights."""
         model = UniversalPINN(self.config).to(self.device)
-        
+
         # Determine weight path (Prefer .pth in root, then checkpoints)
         weights_path = self.run_dir / "model.pth"
         if not weights_path.exists():
             raise FileNotFoundError(f"Model weights not found at {weights_path}")
-            
+
         logger.info(f"Loading weights from: {weights_path}")
         state_dict = torch.load(weights_path, map_location=self.device)
         model.load_state_dict(state_dict)
-        model.eval() # Set to evaluation mode
-        
+        model.eval()  # Set to evaluation mode
+
         # Freeze parameters to prevent accidental gradients accumulation
         for param in model.parameters():
             param.requires_grad = False
-            
+
         return model
 
     def _cache_ranges(self) -> None:
         """Pre-calculates scaling factors for Autograd Chain Rule."""
         # Extract ranges from config (assumes [min, max])
         m = self.config["market"]
-        
+
         self.t_min, self.t_max = m["t_range"]
         self.S_min, self.S_max = m["S_range"]
         self.K_min, self.K_max = m["K_range"]
         self.sig_min, self.sig_max = m["sigma_range"]
         self.r_min, self.r_max = m["r_range"]
-        
+
         # Calculate denominators for chain rule derivatives
         # d(Norm)/d(Real) = 1 / (Max - Min)
         self.dt_scale = 1.0 / (self.t_max - self.t_min)
@@ -104,14 +104,11 @@ class InferenceEngine:
     """
 
     def __init__(
-        self, 
-        call_model_dir: str, 
-        put_model_dir: str, 
-        device_str: str = "cpu"
+        self, call_model_dir: str, put_model_dir: str, device_str: str = "cpu"
     ):
         """
         Initializes the engine with dual models (Call & Put).
-        
+
         Args:
             call_model_dir: Path to the training run directory for Call Option.
             put_model_dir: Path to the training run directory for Put Option.
@@ -123,10 +120,10 @@ class InferenceEngine:
         # Initialize Model Bundles
         logger.info("Loading CALL Model Bundle...")
         self.call_bundle = ModelBundle(call_model_dir, self.device)
-        
+
         logger.info("Loading PUT Model Bundle...")
         self.put_bundle = ModelBundle(put_model_dir, self.device)
-        
+
         logger.info("Inference Engine Ready.")
 
     def predict(self, request: OptionPricingRequest) -> PricingResponse:
@@ -135,11 +132,11 @@ class InferenceEngine:
         Orchestrates input normalization, model inference, and Greek calculation.
         """
         start_time = time.perf_counter()
-        
+
         # 1. Select appropriate model bundle
         bundle = (
-            self.call_bundle 
-            if request.option_type == OptionType.CALL 
+            self.call_bundle
+            if request.option_type == OptionType.CALL
             else self.put_bundle
         )
 
@@ -149,7 +146,7 @@ class InferenceEngine:
 
         # 3. Perform Inference & Autograd
         price, greeks = self._compute_price_and_greeks(inputs_norm, request, bundle)
-        
+
         # 4. Construct Response
         end_time = time.perf_counter()
         latency_ms = (end_time - start_time) * 1000
@@ -159,7 +156,7 @@ class InferenceEngine:
             greeks=greeks,
             model_version=bundle.run_dir.name,
             inference_time_ms=round(latency_ms, 4),
-            device=str(self.device)
+            device=str(self.device),
         )
 
     def _prepare_inputs(
@@ -179,22 +176,19 @@ class InferenceEngine:
         # Stack into tensor: [batch_size=1, n_inputs=5]
         # Order must match training: t, S, sigma, r, K
         x_np = np.array([[t_n, S_n, sig_n, r_n, K_n]], dtype=np.float32)
-        
+
         # Create Tensor and enable grad
         x_tensor = torch.tensor(x_np, device=self.device, requires_grad=True)
-        
+
         # Also return Normalized K tensor for denormalization later
         # (Since Model Output is V/K, we need K_norm to reconstruct V, but actually we need Real K)
         # We pass K_norm just in case, but usually we multiply by Real K.
         # However, for Autograd w.r.t inputs, x_tensor contains K_norm at index 4.
-        
+
         return x_tensor, torch.tensor([K_n], device=self.device)
 
     def _compute_price_and_greeks(
-        self, 
-        x_tensor: torch.Tensor, 
-        req: OptionPricingRequest, 
-        bundle: ModelBundle
+        self, x_tensor: torch.Tensor, req: OptionPricingRequest, bundle: ModelBundle
     ) -> Tuple[float, GreeksResponse]:
         """
         Executes the PINN forward pass and computes 1st & 2nd order derivatives.
@@ -203,14 +197,14 @@ class InferenceEngine:
         # --- Forward Pass ---
         # Model outputs Normalized Price Ratio (V / K)
         v_ratio_pred = bundle.model(x_tensor)
-        
+
         # Real Price V = Ratio * K
         # We perform this multiplication symbolically to let gradients flow back to K if needed
         # But 'req.strike_price' is a float constants here for the multiplication scope.
         # To get proper derivatives w.r.t S, t, etc., we treat V_real as a function of x_tensor.
         # But wait, K is also an input in x_tensor[:, 4].
         # For Greeks definition, K is constant when finding Delta (dV/dS).
-        
+
         # Calculate Real Price for Output
         price_pred = v_ratio_pred.item() * req.strike_price
 
@@ -220,23 +214,23 @@ class InferenceEngine:
             outputs=v_ratio_pred,
             inputs=x_tensor,
             grad_outputs=torch.ones_like(v_ratio_pred),
-            create_graph=True # Required for higher-order derivatives (Gamma)
+            create_graph=True,  # Required for higher-order derivatives (Gamma)
         )[0]
-        
+
         # Extract Normalized Gradients
         # x_tensor columns: [0]:t, [1]:S, [2]:sigma, [3]:r, [4]:K
         dv_dt_n = grads[0, 0]
         dv_ds_n = grads[0, 1]
         dv_dsig_n = grads[0, 2]
         dv_dr_n = grads[0, 3]
-        
+
         # --- Second Order Derivative (Gamma) ---
         # d^2V / dS^2 -> We need grad of (dv_ds_n) w.r.t S_n
         grad_gamma = torch.autograd.grad(
             outputs=dv_ds_n,
             inputs=x_tensor,
             grad_outputs=torch.ones_like(dv_ds_n),
-            create_graph=False # No need for 3rd order
+            create_graph=False,  # No need for 3rd order
         )[0]
         d2v_ds2_n = grad_gamma[0, 1]
 
@@ -244,17 +238,17 @@ class InferenceEngine:
         # V = V_ratio * K_real
         # Let y = V_ratio
         # Delta = dV/dS = K * (dy/dS_n) * (dS_n/dS)
-        
+
         K = req.strike_price
-        
+
         # 1. Delta (dV/dS)
         delta = K * dv_ds_n.item() * bundle.dS_scale
-        
+
         # 2. Gamma (d^2V/dS^2)
         # Gamma = d/dS (Delta) = K * d/dS_n (dy/dS_n * dS_scale) * dS_n/dS
         #       = K * (d^2y/dS_n^2) * (dS_scale)^2
-        gamma = K * d2v_ds2_n.item() * (bundle.dS_scale ** 2)
-        
+        gamma = K * d2v_ds2_n.item() * (bundle.dS_scale**2)
+
         # 3. Theta (dV/dt)
         # Typically Theta is time decay (-dV/dt) or sensitivity to time passage.
         # PINN t input is usually "Time to Maturity" (tau).
@@ -265,20 +259,17 @@ class InferenceEngine:
         # Usually Theta = dV/dt_calendar = - dV/d_tau.
         # We will return -1 * theta_wrt_tau to align with standard definition (Time Decay).
         theta = -1.0 * theta_wrt_tau
-        
+
         # 4. Vega (dV/dSigma)
         vega = K * dv_dsig_n.item() * bundle.dsig_scale
-        
+
         # 5. Rho (dV/dr)
         rho = K * dv_dr_n.item() * bundle.dr_scale
 
         return max(0.0, price_pred), GreeksResponse(
-            delta=delta,
-            gamma=gamma,
-            theta=theta,
-            vega=vega,
-            rho=rho
+            delta=delta, gamma=gamma, theta=theta, vega=vega, rho=rho
         )
+
 
 # ==============================================================================
 # Factory / Singleton Instantiation (Optional)
