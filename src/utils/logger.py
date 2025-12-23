@@ -3,39 +3,60 @@ import logging
 from torch.utils.tensorboard import SummaryWriter
 from typing import Dict, List, Set, Tuple
 
+
 class TrainingLogger:
     """
     Wrapper for TensorBoard and Standard Logging.
-    
+
     [Update]: Refactored for performance and stability.
     - Configuration lists moved to __init__ for better state management.
     - Helper functions extracted to private methods to reduce overhead.
     - Maintains dynamic 'Catch-all' logic for future-proofing.
     """
+
     def __init__(self, log_dir: str):
         self.writer = SummaryWriter(log_dir=log_dir)
         self.log_dir = log_dir
-        
+
         # 1. Acronyms: These keys will always be converted to UPPERCASE.
         self.acronyms = {
-            'rmse', 'mae', 'smape', 'pde', 'ivp', 'bvp', 'l2', 'h1', 'mse', 'nn', 'dl', 'ft'
+            "rmse",
+            "mae",
+            "smape",
+            "pde",
+            "ivp",
+            "bvp",
+            "l2",
+            "h1",
+            "mse",
+            "nn",
+            "dl",
+            "ft",
         }
-        
+
         # 2. Tag Overrides: Specific mapping for keys.
         self.tag_overrides = {
-            'data': 'Data Total',
-            'bvp_min': 'BVP1 Min',
-            'bvp_max': 'BVP2 Max',
-            'r_score': 'Corr',
-            'bvp_total': 'BVP Total',
-            'kink_mae': 'Kink MAE'
+            "data": "Data Total",
+            "bvp_min": "BVP1 Min",
+            "bvp_max": "BVP2 Max",
+            "r_score": "Corr",
+            "bvp_total": "BVP Total",
+            "kink_mae": "Kink MAE",
         }
-        
+
         # 3. Display Order Configuration (Moved from method to init)
         # Defines the priority order for console logging.
-        self.main_loss_order = ['total', 'data', 'pde']
-        self.detail_loss_order = ['ivp', 'bvp_total', 'bvp_min', 'bvp_max', 'kink']
-        self.metric_order = ['smape', 'rmse', 'kink_mae', 'r_score', 'mae', 'bias', 'max_error']
+        self.main_loss_order = ["total", "data", "pde"]
+        self.detail_loss_order = ["ivp", "bvp_total", "bvp_min", "bvp_max", "kink"]
+        self.metric_order = [
+            "smape",
+            "rmse",
+            "kink_mae",
+            "r_score",
+            "mae",
+            "bias",
+            "max_error",
+        ]
 
     def _format_tag_name(self, key: str) -> str:
         """
@@ -44,13 +65,15 @@ class TrainingLogger:
         """
         if key in self.tag_overrides:
             return self.tag_overrides[key]
-            
+
         if key.lower() in self.acronyms or len(key) <= 3:
             return key.upper()
-            
-        return key.replace('_', ' ').title()
 
-    def _build_string_parts(self, data_dict: Dict[str, float], priority_keys: List[str], precision=".8f") -> Tuple[List[str], Set[str]]:
+        return key.replace("_", " ").title()
+
+    def _build_string_parts(
+        self, data_dict: Dict[str, float], priority_keys: List[str], precision=".8f"
+    ) -> Tuple[List[str], Set[str]]:
         """
         Internal helper to format a subset of dictionary items into string parts.
         Returns:
@@ -59,21 +82,21 @@ class TrainingLogger:
         """
         parts = []
         processed = set()
-        
+
         # Process Priority Keys first
         for key in priority_keys:
             if key in data_dict:
                 name = self._format_tag_name(key)
                 val = data_dict[key]
-                
+
                 # Apply specific formatting rules
-                if key == 'smape':
+                if key == "smape":
                     parts.append(f"{name}:{val:.2f}%")
                 else:
                     parts.append(f"{name}:{val:{precision}}")
-                
+
                 processed.add(key)
-        
+
         return parts, processed
 
     def log_training_loss(self, epoch: int, losses: Dict[str, float]) -> None:
@@ -86,14 +109,16 @@ class TrainingLogger:
         for key, value in losses.items():
             # Determine Group based on importance
             group = "Loss" if key in main_keys_set else "Loss Detail"
-            
+
             # Format Name
             pretty_name = self._format_tag_name(key)
-            
-            # Log to TensorBoard
-            self.writer.add_scalar(f'{group}/{pretty_name}', value, epoch)
 
-    def log_validation_metrics(self, epoch: int, metrics: Dict[str, float], losses: Dict[str, float]) -> None:
+            # Log to TensorBoard
+            self.writer.add_scalar(f"{group}/{pretty_name}", value, epoch)
+
+    def log_validation_metrics(
+        self, epoch: int, metrics: Dict[str, float], losses: Dict[str, float]
+    ) -> None:
         """
         Log validation metrics to TensorBoard and Console.
         Uses optimized class-level configurations and helper methods.
@@ -101,10 +126,10 @@ class TrainingLogger:
         # --- 1. TensorBoard Logging (Dynamic Loop) ---
         for key, value in metrics.items():
             pretty_name = self._format_tag_name(key)
-            self.writer.add_scalar(f'Metrics Ratio/{pretty_name}', value, epoch)
+            self.writer.add_scalar(f"Metrics Ratio/{pretty_name}", value, epoch)
 
         # --- 2. Console Logging (Dynamic & Ordered) ---
-        
+
         # A. Build Main Losses String
         main_parts, processed_main = self._build_string_parts(
             losses, self.main_loss_order, precision=".12f"
@@ -115,7 +140,7 @@ class TrainingLogger:
         detail_parts, processed_details = self._build_string_parts(
             losses, self.detail_loss_order, precision=".12f"
         )
-        
+
         # B2. Catch-all for leftovers (Dynamic Loss Logging)
         # Adds any loss that wasn't in Main OR Detail priority lists.
         for key, val in losses.items():
@@ -128,7 +153,7 @@ class TrainingLogger:
         metric_parts, processed_metrics = self._build_string_parts(
             metrics, self.metric_order, precision=".8f"
         )
-        
+
         # C2. Dynamic Metrics (Catch-all for experimental metrics)
         for key, val in metrics.items():
             if key not in processed_metrics:

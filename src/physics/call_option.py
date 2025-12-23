@@ -5,12 +5,20 @@ from scipy.stats import norm
 from .base_option import OptionPhysics
 from typing import Union
 
+
 class CallOption(OptionPhysics):
     """
     Concrete implementation for European Call Options.
     """
 
-    def analytical_solution(self, t: np.ndarray, S: np.ndarray, K: np.ndarray, r: np.ndarray, sigma: np.ndarray) -> np.ndarray:
+    def analytical_solution(
+        self,
+        t: np.ndarray,
+        S: np.ndarray,
+        K: np.ndarray,
+        r: np.ndarray,
+        sigma: np.ndarray,
+    ) -> np.ndarray:
         """
         Computes the Black-Scholes price for a European Call Option.
         Formula: C = S * N(d1) - K * e^(-rt) * N(d2)
@@ -20,35 +28,57 @@ class CallOption(OptionPhysics):
         S = np.maximum(S, 1e-10)
         K = np.maximum(K, 1e-10)
 
-        d1 = (np.log(S / K) + (r + 0.5 * sigma ** 2) * t) / (sigma * np.sqrt(t))
+        d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * t) / (sigma * np.sqrt(t))
         d2 = d1 - sigma * np.sqrt(t)
-        
+
         price = S * norm.cdf(d1) - K * np.exp(-r * t) * norm.cdf(d2)
         return price
 
-    def payoff(self, S: Union[torch.Tensor, np.ndarray], K: Union[torch.Tensor, np.ndarray]) -> Union[torch.Tensor, np.ndarray]:
+    def payoff(
+        self, S: Union[torch.Tensor, np.ndarray], K: Union[torch.Tensor, np.ndarray]
+    ) -> Union[torch.Tensor, np.ndarray]:
         """
         Call Option Payoff: max(S - K, 0)
         """
         # Handle both PyTorch Tensors and NumPy arrays
         if isinstance(S, torch.Tensor):
-            return torch.maximum(S - K, torch.tensor(0.0, device=S.device))
+            # Explicitly cast K to Tensor to satisfy Mypy strict type checking for torch.maximum
+            K_t = torch.as_tensor(K, device=S.device, dtype=S.dtype)
+            zero_t = torch.tensor(0.0, device=S.device, dtype=S.dtype)
+            return torch.maximum(S - K_t, zero_t)
+
         return np.maximum(S - K, 0)
 
-    def boundary_condition_lower(self, t: Union[torch.Tensor, np.ndarray], r: Union[torch.Tensor, np.ndarray], K: Union[torch.Tensor, np.ndarray]) -> Union[torch.Tensor, np.ndarray]:
+    def boundary_condition_lower(
+        self,
+        t: Union[torch.Tensor, np.ndarray],
+        r: Union[torch.Tensor, np.ndarray],
+        K: Union[torch.Tensor, np.ndarray],
+    ) -> Union[torch.Tensor, np.ndarray]:
         """
         Lower Boundary Condition (S -> Minimum).
         For a Call Option, as Spot Price becomes Minimum, the Option Price becomes 0.
         """
         if isinstance(t, torch.Tensor):
             return torch.zeros_like(t)
-        return np.zeros_like(t) # Return a zero-filled array (or list) of length t.
+        return np.zeros_like(t)  # Return a zero-filled array (or list) of length t.
 
-    def boundary_condition_upper(self, t: Union[np.ndarray, torch.Tensor], S_max: Union[np.ndarray, torch.Tensor, float], K: Union[np.ndarray, torch.Tensor], r: Union[np.ndarray, torch.Tensor]) -> Union[np.ndarray, torch.Tensor]:
+    def boundary_condition_upper(
+        self,
+        t: Union[np.ndarray, torch.Tensor],
+        S_max: Union[np.ndarray, torch.Tensor, float],
+        K: Union[np.ndarray, torch.Tensor],
+        r: Union[np.ndarray, torch.Tensor],
+    ) -> Union[np.ndarray, torch.Tensor]:
         """
         Upper Boundary Condition (S -> Maximum).
-        For a Call Option, as Spot Price increases (Maximum), Price -> S - K * exp(-rt).
+        Formula: S - K * exp(-rt)
         """
         if isinstance(t, torch.Tensor):
-            return S_max - K * torch.exp(-r * t)
+            # Explicit conversions for strict type safety
+            S_max_t = torch.as_tensor(S_max, device=t.device, dtype=t.dtype)
+            K_t = torch.as_tensor(K, device=t.device, dtype=t.dtype)
+            r_t = torch.as_tensor(r, device=t.device, dtype=t.dtype)
+            return S_max_t - K_t * torch.exp(-r_t * t)
+
         return S_max - K * np.exp(-r * t)

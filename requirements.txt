@@ -1,21 +1,39 @@
-# --- Core AI & Math ---
-torch           # Deep Learning framework (PyTorch)
-numpy           # Fundamental package for scientific computing
-pandas          # Data analysis and manipulation tool
-scipy           # Scientific computing (used for statistical functions)
-scikit-learn    # Machine Learning utilities
+# ==============================================================================
+# PINN Option Pricing - Project Dependencies
+# ==============================================================================
 
-# --- Visualization & Tracking ---
-matplotlib      # Static, animated, and interactive plotting
-tensorboard     # Real-time training monitoring and visualization
-tqdm            # Progress bar for loops (Essential for training feedback)
+# --- Core AI & Scientific Computing ---
+torch>=2.0.0            # PyTorch Deep Learning framework (Core Engine)
+numpy>=1.24.0           # Fundamental package for numerical computation
+pandas>=2.0.0           # Data manipulation and analysis structures
+scipy>=1.10.0           # Advanced scientific computing (Stats, Optimization)
+scikit-learn>=1.3.0     # Machine Learning utilities (Preprocessing, Metrics)
 
-# --- API & Server (Production) ---
-fastapi         # Modern, high-performance web framework for building APIs
-uvicorn         # ASGI web server implementation
-pydantic        # Data validation using Python type hints
-requests        # HTTP library for testing APIs
+# --- Visualization & Experiment Tracking ---
+matplotlib>=3.7.0       # Static and interactive plotting library
+tensorboard>=2.14.0     # Real-time experiment monitoring and visualization
 
-# --- Utilities ---
-pyyaml          # YAML parser for configuration files
-joblib          # Lightweight pipelining and object serialization
+# --- Utilities & Progress Tracking ---
+tqdm>=4.66.0            # Progress bar for loops (Training feedback)
+pyyaml>=6.0             # YAML parser for loading configuration files
+joblib>=1.3.0           # Object serialization and efficient pipelining
+pytz>=2023.3            # Timezone handling (Required for Financial Date logic)
+
+# --- API & Production Server ---
+fastapi>=0.103.0        # High-performance web framework for API endpoints
+uvicorn[standard]>=0.23.0 # ASGI server implementation for FastAPI
+pydantic>=2.4.0         # Data validation and settings management using Python types
+requests>=2.31.0        # HTTP library for API testing and external calls
+
+# --- Development, Testing & CI/CD Toolchain ---
+# Essential for maintaining code quality in GitHub Actions pipeline
+pytest>=7.4.0           # Testing framework
+pytest-cov>=4.1.0       # Coverage plugin for pytest
+black>=23.9.0           # Uncompromising code formatter
+flake8>=6.1.0           # Style guide enforcement (Linting)
+mypy>=1.5.0             # Static type checker
+
+# --- Type Stubs (Mypy Support) ---
+# Required for static type checking of libraries that don't include types by default
+types-pytz>=2023.3.0.0  # Type definitions for pytz
+types-requests>=2.31.0.0 # Type definitions for requests
