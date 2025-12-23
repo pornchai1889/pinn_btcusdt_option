@@ -1,9 +1,11 @@
 # src/models/pinn_net.py
+import torch
 import torch.nn as nn
 import logging
+from typing import Dict, Any, Type
 
 class UniversalPINN(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config: Dict[str, Any]):
         super(UniversalPINN, self).__init__()
         
         # Extract params
@@ -53,11 +55,11 @@ class UniversalPINN(nn.Module):
         self.net = nn.Sequential(*layers)
         self._initialize_weights()
 
-    def _initialize_weights(self):
+    def _initialize_weights(self) -> None:
         for m in self.modules():
             if isinstance(m, nn.Linear):
                 nn.init.xavier_normal_(m.weight)
                 nn.init.zeros_(m.bias)
 
-    def forward(self, x):
+    def forward(self, x : torch.Tensor) -> torch.Tensor:
         return self.net(x)

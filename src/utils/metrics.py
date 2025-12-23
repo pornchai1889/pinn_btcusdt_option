@@ -1,4 +1,5 @@
 # src/utils/metrics.py
+from typing import Dict, Any
 import numpy as np
 
 class MetricsCalculator:
@@ -7,7 +8,7 @@ class MetricsCalculator:
     """
     
     @staticmethod
-    def calculate_smape(true, pred):
+    def calculate_smape(true: np.ndarray, pred: np.ndarray) -> float:
         """
         Symmetric Mean Absolute Percentage Error (SMAPE).
         Range: 0-100%
@@ -17,7 +18,7 @@ class MetricsCalculator:
         return np.mean(diff / (denominator + 1e-8)) * 100
 
     @staticmethod
-    def compute_kink_metrics(true_at_kink, pred_at_kink):
+    def compute_kink_metrics(true_at_kink: np.ndarray, pred_at_kink: np.ndarray) -> Dict[str, float]:
         """
         [New] Computes specific metrics for the Kink point (S=K, t=0).
         Args:
@@ -37,7 +38,7 @@ class MetricsCalculator:
         }
 
     @staticmethod
-    def compute_all_metrics(true, pred):
+    def compute_all_metrics(true: np.ndarray, pred: np.ndarray) -> Dict[str, float]:
         """
         Computes standard regression metrics: RMSE, MAE, SMAPE, Bias, Corr, Max Error.
         """

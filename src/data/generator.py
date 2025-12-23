@@ -1,6 +1,7 @@
 # src/data/generator.py
 import numpy as np
 from .normalizer import MarketNormalizer
+from typing import Any, Dict, Tuple 
 
 class DataGenerator:
     """
@@ -12,7 +13,7 @@ class DataGenerator:
     
     Updated to support both Call and Put options via Physics Engine delegation.
     """
-    def __init__(self, config, normalizer: MarketNormalizer, physics_engine):
+    def __init__(self, config: Dict[str, Any], normalizer: MarketNormalizer, physics_engine : Any):
         self.config = config
         self.norm = normalizer
         self.physics = physics_engine  # Injected Physics Engine (CallOption or PutOption)
@@ -36,7 +37,7 @@ class DataGenerator:
         range_width = self.m_max - self.m_min
         self.sampling_std = (range_width / 6.0) * adaptive_factor
 
-    def _sample_moneyness_mixed(self, n):
+    def _sample_moneyness_mixed(self, n: int) -> np.ndarray:
         """
         Internal Method: Mixed Distribution Strategy.
         1. Sample from Gaussian (centered at 1.0).
@@ -57,7 +58,7 @@ class DataGenerator:
         
         return flat_data.reshape(n, 1)
 
-    def _get_discrete_K(self, n):
+    def _get_discrete_K(self, n : int) -> np.ndarray:
         """
         Internal Method: Samples Strike Prices (K).
         Supports both Continuous and Discrete (Grid-based) sampling.
@@ -78,7 +79,7 @@ class DataGenerator:
         
         return aligned_min + random_steps * self.K_step
 
-    def _sample_time_power_law(self, n):
+    def _sample_time_power_law(self, n : int) -> np.ndarray:
         """
         Internal Method: Power Law Sampling for Time.
         Focuses more points near t=0 (Maturity) where curvature is high.
@@ -87,7 +88,7 @@ class DataGenerator:
         u = np.random.uniform(0, 1, (n, 1))
         return self.t_min + (self.t_max - self.t_min) * (u ** self.time_power)
 
-    def get_pde_batch(self, n):
+    def get_pde_batch(self, n : int) -> np.ndarray:
         """
         Generates Collocation Points for PDE Residual Loss (Interior Points).
         Returns: Normalized Inputs (np.array)
@@ -103,7 +104,7 @@ class DataGenerator:
         # 2. Normalize and Return
         return self.norm.normalize_batch(t, S, sigma, r, K)
 
-    def get_ivp_batch(self, n):
+    def get_ivp_batch(self, n : int) -> Tuple[np.ndarray, np.ndarray]:
         """
         Generates Initial Value Problem Data (t=0).
         Delegates payoff calculation to the Physics Engine (Call or Put).
@@ -127,7 +128,7 @@ class DataGenerator:
         
         return X_norm, y_norm
 
-    def get_bvp_batch(self, n):
+    def get_bvp_batch(self, n : int) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
         Generates Boundary Value Problem Data (Lower & Upper Bounds of S).
         Delegates boundary logic to the Physics Engine (Call or Put).
@@ -157,7 +158,7 @@ class DataGenerator:
 
         return X_lower_norm, y_lower_norm, X_upper_norm, y_upper_norm
     
-    def get_kink_batch(self, n_samples):
+    def get_kink_batch(self, n_samples : int) -> np.ndarray:
         """
         Generates a specific batch where S = K and t = 0 (The Kink).
         Used for Hard Attention mechanism in training.
@@ -193,7 +194,7 @@ class DataGenerator:
         
         return kink_batch
     
-    def get_validation_batch(self, n):
+    def get_validation_batch(self, n : int) -> np.ndarray:
         """
         Generates a generic batch for validation/testing.
         """

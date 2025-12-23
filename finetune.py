@@ -5,6 +5,7 @@ import logging
 import torch
 import sys
 from datetime import datetime
+from typing import Dict, Any, Tuple
 
 # Ensure python can find 'src' if running from root
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
@@ -17,20 +18,20 @@ from src.data.generator import DataGenerator
 from src.core.trainer import Trainer
 from src.utils.visualization import Visualizer
 
-def load_config(path):
+def load_config(path: str) -> Dict[str, Any]:
     """Load configuration from YAML file."""
     if not os.path.exists(path):
         raise FileNotFoundError(f"Config file not found at: {path}")
     with open(path, 'r', encoding='utf-8') as f:
         return yaml.safe_load(f)
 
-def locate_mother_config_and_root(base_search_dir):
+def locate_mother_config_and_root(base_search_dir: str) -> Tuple[str, str]:
     """
     Traverses up the directory tree to find the original 'config.yaml' (Mother Config).
     Determines the true Root Experiment Directory to prevent nested fine-tuning folders.
     
     Returns:
-        tuple: (root_run_dir, config_path)
+        Tuple: (root_run_dir, config_path)
     """
     config_path = None
     current_search_dir = base_search_dir

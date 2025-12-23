@@ -1,6 +1,7 @@
 # src/utils/logger.py
 import logging
 from torch.utils.tensorboard import SummaryWriter
+from typing import Dict, List, Set, Tuple
 
 class TrainingLogger:
     """
@@ -11,7 +12,7 @@ class TrainingLogger:
     - Helper functions extracted to private methods to reduce overhead.
     - Maintains dynamic 'Catch-all' logic for future-proofing.
     """
-    def __init__(self, log_dir):
+    def __init__(self, log_dir: str):
         self.writer = SummaryWriter(log_dir=log_dir)
         self.log_dir = log_dir
         
@@ -36,7 +37,7 @@ class TrainingLogger:
         self.detail_loss_order = ['ivp', 'bvp_total', 'bvp_min', 'bvp_max', 'kink']
         self.metric_order = ['smape', 'rmse', 'kink_mae', 'r_score', 'mae', 'bias', 'max_error']
 
-    def _format_tag_name(self, key):
+    def _format_tag_name(self, key: str) -> str:
         """
         Helper to format keys into professional Chart Titles.
         Priority: Overrides > Acronyms > Title Case.
@@ -49,7 +50,7 @@ class TrainingLogger:
             
         return key.replace('_', ' ').title()
 
-    def _build_string_parts(self, data_dict, priority_keys, precision=".8f"):
+    def _build_string_parts(self, data_dict: Dict[str, float], priority_keys: List[str], precision=".8f") -> Tuple[List[str], Set[str]]:
         """
         Internal helper to format a subset of dictionary items into string parts.
         Returns:
@@ -75,7 +76,7 @@ class TrainingLogger:
         
         return parts, processed
 
-    def log_training_loss(self, epoch, losses):
+    def log_training_loss(self, epoch: int, losses: Dict[str, float]) -> None:
         """
         Log training losses to TensorBoard using a dynamic loop.
         """
@@ -92,7 +93,7 @@ class TrainingLogger:
             # Log to TensorBoard
             self.writer.add_scalar(f'{group}/{pretty_name}', value, epoch)
 
-    def log_validation_metrics(self, epoch, metrics, losses):
+    def log_validation_metrics(self, epoch: int, metrics: Dict[str, float], losses: Dict[str, float]) -> None:
         """
         Log validation metrics to TensorBoard and Console.
         Uses optimized class-level configurations and helper methods.
@@ -106,13 +107,13 @@ class TrainingLogger:
         
         # A. Build Main Losses String
         main_parts, processed_main = self._build_string_parts(
-            losses, self.main_loss_order, precision=".8f"
+            losses, self.main_loss_order, precision=".12f"
         )
 
         # B. Build Detailed Losses String
         # B1. Priority Details
         detail_parts, processed_details = self._build_string_parts(
-            losses, self.detail_loss_order, precision=".8f"
+            losses, self.detail_loss_order, precision=".12f"
         )
         
         # B2. Catch-all for leftovers (Dynamic Loss Logging)
@@ -120,19 +121,19 @@ class TrainingLogger:
         for key, val in losses.items():
             if key not in processed_main and key not in processed_details:
                 name = self._format_tag_name(key)
-                detail_parts.append(f"{name}:{val:.8f}")
+                detail_parts.append(f"{name}:{val:.12f}")
 
         # C. Build Metrics String
         # C1. Priority Metrics
         metric_parts, processed_metrics = self._build_string_parts(
-            metrics, self.metric_order, precision=".4f"
+            metrics, self.metric_order, precision=".8f"
         )
         
         # C2. Dynamic Metrics (Catch-all for experimental metrics)
         for key, val in metrics.items():
             if key not in processed_metrics:
                 name = self._format_tag_name(key)
-                metric_parts.append(f"{name}:{val:.4f}")
+                metric_parts.append(f"{name}:{val:.8f}")
 
         # Construct the final log message using join() for clean spacing
         log_msg = (
@@ -143,5 +144,5 @@ class TrainingLogger:
         )
         logging.info(log_msg)
 
-    def close(self):
+    def close(self) -> None:
         self.writer.close()

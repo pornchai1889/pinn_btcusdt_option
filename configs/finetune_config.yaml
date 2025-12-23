@@ -1,6 +1,6 @@
 # configs/ft_config.yaml
 # Configuration for Fine-tuning an existing model
-base_run_dir: "runs/train_2025-12-19_20-42-18_put/checkpoints/epoch_40000"  # <--- Model path
+base_run_dir: "runs/train_2025-12-23_16-52-00_call"  # <--- Model path
 model_checkpoint: "model.pth"      
 device: "cuda:0"  # <--- ("cuda" or "cpu")
 
@@ -22,5 +22,5 @@ fine_tune_params:
   # Validation
   val_interval: 1000
   n_val_sample: 100000
-  n_kink_val_sample: 2000
+  n_kink_val_sample: 20000
   checkpoint_epochs: 10000
