@@ -23,7 +23,7 @@ market:
 sampling:
   moneyness_range: [0.0, 2.0]    # If Put Option V = 0 (Lower Bound). Its max theoretical value approaches K as S to 0.
   adaptive_std: 1.0              # Same or different focus (default: 1)           
-  time_sampling_power: 2.0       # Same or different focus (default: 2)
+  time_sampling_power: 2.0       # Same or different focus (default: 2) if 1 is uniform in time
 
 # ------------------------------------------------------------------------------
 # 3. Model Architecture
@@ -31,7 +31,7 @@ sampling:
 model:
   n_input: 5
   n_output: 1
-  n_hidden: 256
+  n_hidden: 512
   n_layers: 4
   hidden_activation: "tanh"       # options: "tanh", "silu", "gelu", "relu", "sigmoid"...(default: tanh) 
   output_activation: "softplus"   # options: "softplus", "relu", "identity"...(default: softplus) 
@@ -57,7 +57,7 @@ training:
   
   val_interval: 1000         # Evaluate model every val_interval epochs
   n_val_sample: 100000
-  n_kink_val_sample: 2000
+  n_kink_val_sample: 20000
   checkpoint_epochs: 10000   # Save model checkpoints every checkpoint
 
 # ------------------------------------------------------------------------------

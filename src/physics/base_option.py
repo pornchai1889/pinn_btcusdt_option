@@ -1,18 +1,21 @@
 # src/physics/base_option.py
 import torch
+import torch.nn as nn
+import numpy as np
 from abc import ABC, abstractmethod
+from typing import Union, Dict, Any
 
 class OptionPhysics(ABC):
     """
     Abstract Base Class for Option Pricing Physics.
     Defines the standard interface and shared PDE logic for financial derivatives.
     """
-    def __init__(self, config):
+    def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.market_config = config['market']
 
     @abstractmethod
-    def analytical_solution(self, t, S, K, r, sigma):
+    def analytical_solution(self, t: np.ndarray, S: np.ndarray, K: np.ndarray, r: np.ndarray, sigma: np.ndarray) -> np.ndarray:
         """
         Calculates the exact price using the analytical formula (e.g., Black-Scholes).
         Used for validation and benchmarking.
@@ -20,7 +23,7 @@ class OptionPhysics(ABC):
         pass
 
     @abstractmethod
-    def payoff(self, S, K):
+    def payoff(self, S: Union[torch.Tensor, np.ndarray], K: Union[torch.Tensor, np.ndarray]) -> Union[torch.Tensor, np.ndarray]:
         """
         Calculates the payoff at maturity (t=0).
         Corresponds to the Initial Value Problem (IVP) condition.
@@ -28,20 +31,20 @@ class OptionPhysics(ABC):
         pass
     
     @abstractmethod
-    def boundary_condition_lower(self, t, r, K):
+    def boundary_condition_lower(self, t: Union[torch.Tensor, np.ndarray], r: Union[torch.Tensor, np.ndarray], K: Union[torch.Tensor, np.ndarray]) -> Union[torch.Tensor, np.ndarray]:
         """
         Calculates the value when S approaches 0 (Lower Boundary).
         """
         pass
 
     @abstractmethod
-    def boundary_condition_upper(self, t, S_max, K, r):
+    def boundary_condition_upper(self, t: Union[np.ndarray, torch.Tensor], S_max: Union[np.ndarray, torch.Tensor, float], K: Union[np.ndarray, torch.Tensor], r: Union[np.ndarray, torch.Tensor]) -> Union[np.ndarray, torch.Tensor]:
         """
         Calculates the value when S approaches Infinity (Upper Boundary).
         """
         pass
 
-    def compute_pde_residual(self, model, x_pde):
+    def compute_pde_residual(self, model: nn.Module, x_pde: torch.Tensor) -> torch.Tensor:
         """
         Computes the Black-Scholes PDE residual (physics loss).
         Equation: dV/dt + 0.5*sigma^2*S^2*d^2V/dS^2 + r*S*dV/dS - r*V = 0

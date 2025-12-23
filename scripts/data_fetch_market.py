@@ -5,6 +5,7 @@ import csv
 import yaml
 import logging
 from datetime import datetime
+from typing import Any, Dict
 
 # --- Environment Setup ---
 # Add project root to sys.path to allow importing from src
@@ -23,13 +24,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger("MarketFetcher")
 
-def load_config(path: str) -> dict:
+def load_config(path: str) -> Dict[str, Any]:
     if not os.path.exists(path):
         raise FileNotFoundError(f"Config file not found: {path}")
     with open(path, 'r') as f:
         return yaml.safe_load(f)
 
-def main():
+def main() -> None:
     # 1. Load Configuration
     config_path = os.path.join(project_root, 'configs', 'data_fetch_market.yaml')
     try:

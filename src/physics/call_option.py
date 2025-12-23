@@ -3,13 +3,14 @@ import numpy as np
 import torch
 from scipy.stats import norm
 from .base_option import OptionPhysics
+from typing import Union
 
 class CallOption(OptionPhysics):
     """
     Concrete implementation for European Call Options.
     """
-    
-    def analytical_solution(self, t, S, K, r, sigma):
+
+    def analytical_solution(self, t: np.ndarray, S: np.ndarray, K: np.ndarray, r: np.ndarray, sigma: np.ndarray) -> np.ndarray:
         """
         Computes the Black-Scholes price for a European Call Option.
         Formula: C = S * N(d1) - K * e^(-rt) * N(d2)
@@ -25,7 +26,7 @@ class CallOption(OptionPhysics):
         price = S * norm.cdf(d1) - K * np.exp(-r * t) * norm.cdf(d2)
         return price
 
-    def payoff(self, S, K):
+    def payoff(self, S: Union[torch.Tensor, np.ndarray], K: Union[torch.Tensor, np.ndarray]) -> Union[torch.Tensor, np.ndarray]:
         """
         Call Option Payoff: max(S - K, 0)
         """
@@ -33,8 +34,8 @@ class CallOption(OptionPhysics):
         if isinstance(S, torch.Tensor):
             return torch.maximum(S - K, torch.tensor(0.0, device=S.device))
         return np.maximum(S - K, 0)
-    
-    def boundary_condition_lower(self, t, r, K):
+
+    def boundary_condition_lower(self, t: Union[torch.Tensor, np.ndarray], r: Union[torch.Tensor, np.ndarray], K: Union[torch.Tensor, np.ndarray]) -> Union[torch.Tensor, np.ndarray]:
         """
         Lower Boundary Condition (S -> Minimum).
         For a Call Option, as Spot Price becomes Minimum, the Option Price becomes 0.
@@ -43,7 +44,7 @@ class CallOption(OptionPhysics):
             return torch.zeros_like(t)
         return np.zeros_like(t) # Return a zero-filled array (or list) of length t.
 
-    def boundary_condition_upper(self, t, S_max, K, r):
+    def boundary_condition_upper(self, t: Union[np.ndarray, torch.Tensor], S_max: Union[np.ndarray, torch.Tensor, float], K: Union[np.ndarray, torch.Tensor], r: Union[np.ndarray, torch.Tensor]) -> Union[np.ndarray, torch.Tensor]:
         """
         Upper Boundary Condition (S -> Maximum).
         For a Call Option, as Spot Price increases (Maximum), Price -> S - K * exp(-rt).

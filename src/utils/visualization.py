@@ -2,12 +2,14 @@
 import os
 import logging
 import torch
+import torch.nn as nn
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.patches import Patch
 from matplotlib.lines import Line2D
 from scipy.stats import norm
+from typing import Dict, Any, Optional, Union, List
 
 class Visualizer:
     """
@@ -20,7 +22,7 @@ class Visualizer:
     3. Post-training Loss Curves.
     """
 
-    def __init__(self, config, physics_engine, run_dir=None):
+    def __init__(self, config: Dict[str, Any], physics_engine: Any, run_dir: Optional[str] = None):
         """
         Args:
             config (dict): Global configuration dictionary.
@@ -36,7 +38,7 @@ class Visualizer:
         self.sampling = config['sampling']
         self.train_conf = config['training']
 
-    def plot_pre_training(self, save_dir):
+    def plot_pre_training(self, save_dir: str) -> None:
         """
         Generate plots that visualize the data distribution BEFORE training starts.
         Replicates 'plot_pre_training' from the original script.
@@ -242,7 +244,7 @@ class Visualizer:
         plt.savefig(os.path.join(save_dir, "data_sampling_distribution.png"))
         plt.close()
 
-    def plot_checkpoint_performance(self, model, epoch, device, save_dir):
+    def plot_checkpoint_performance(self, model: nn.Module, epoch: Union[int, str], device: torch.device, save_dir: str) -> None:
         """
         Generate comprehensive validation plots: 3D Surface, Scatter Parity, and 2D Payoff Slice.
         Saved to the specific checkpoint directory (or root if final).
@@ -440,7 +442,7 @@ class Visualizer:
         plt.savefig(os.path.join(save_dir, "payoff_at_maturity_kink.png"))
         plt.close()
 
-    def plot_loss_history(self, history, save_dir=None):
+    def plot_loss_history(self, history: Dict[str, List[float]], save_dir: Optional[str] = None) -> None:
         """
         Generate detailed loss curves.
         [Update]: Added 'Kink Loss' tracking to visualize hard attention learning.
@@ -510,7 +512,7 @@ class Visualizer:
             plt.savefig(os.path.join(plot_dir, "total_loss_curve.png"))
             plt.close()
 
-    def _sample_moneyness_mixed(self, n, m_min, m_max, std_val):
+    def _sample_moneyness_mixed(self, n: int, m_min: float, m_max: float, std_val: float) -> np.ndarray:
         """
         Internal Helper: Mixed Distribution Strategy.
         Used strictly for generating the visualization scatter plot.

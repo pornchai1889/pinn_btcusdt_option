@@ -5,6 +5,7 @@ import logging
 import torch
 import sys
 from datetime import datetime
+from typing import Dict, Any
 
 # Ensure python can find 'src' if running from root
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
@@ -17,7 +18,7 @@ from src.data.generator import DataGenerator
 from src.core.trainer import Trainer
 from src.utils.visualization import Visualizer
 
-def load_config(path):
+def load_config(path: str) -> Dict[str, Any]:
     """Load configuration from YAML file."""
     if not os.path.exists(path):
         raise FileNotFoundError(f"Config file not found at: {path}")

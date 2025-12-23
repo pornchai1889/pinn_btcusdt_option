@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 from datetime import datetime
 from scipy.stats import norm
-from typing import Tuple, List, Optional
+from typing import Tuple, List, Dict, Any, Optional
 
 # --- Environment Setup ---
 # Add project root to sys.path to allow importing from src
@@ -122,8 +122,8 @@ class MarketDataHandler:
                 
         return all_prices[-limit:]
 
-    def calculate_dynamic_volatility(self, main_prices: np.array, lookback_prices: List[float], 
-                                   window: int, annual_factor: float) -> np.array:
+    def calculate_dynamic_volatility(self, main_prices: np.ndarray, lookback_prices: List[float], 
+                                   window: int, annual_factor: float) -> np.ndarray:
         """
         Calculates rolling volatility using combined historical and current data.
         """
@@ -173,13 +173,13 @@ class RealMarketEvaluator:
         try: mpl.rcParams['axes.unicode_minus'] = False
         except: pass
 
-    def _load_yaml(self, path: str) -> dict:
+    def _load_yaml(self, path: str) -> Dict[str, Any]:
         if not os.path.exists(path):
             raise FileNotFoundError(f"Config not found: {path}")
         with open(path, 'r') as f:
             return yaml.safe_load(f)
 
-    def _load_train_config(self) -> dict:
+    def _load_train_config(self) -> Dict[str, Any]:
         """Traverses up to find the original config.json/yaml."""
         curr = self.run_folder
         for _ in range(5):
@@ -192,7 +192,7 @@ class RealMarketEvaluator:
             curr = os.path.dirname(curr)
         raise FileNotFoundError(f"Original training config not found starting from {self.run_folder}")
 
-    def _init_model(self):
+    def _init_model(self) -> None:
         """Initializes model and loads weights."""
         m_conf = self.train_config['model']
         self.model = UniversalPINN(self.train_config).to(self.device)
@@ -210,7 +210,7 @@ class RealMarketEvaluator:
         self.model.load_state_dict(torch.load(model_path, map_location=self.device))
         self.model.eval()
 
-    def _init_physics_engines(self):
+    def _init_physics_engines(self) -> None:
         """Initializes physics engines for analytical comparison."""
         self.call_physics = CallOption(self.train_config)
         self.put_physics = PutOption(self.train_config)
@@ -220,7 +220,7 @@ class RealMarketEvaluator:
         self.is_trained_on_put = 'put' in exp_name
         logger.info(f"Model Logic: {'PUT' if self.is_trained_on_put else 'CALL'}")
 
-    def run(self):
+    def run(self) -> None:
         """
         Main execution: Scans specifically the 'data_raw_dir' folder for CSVs.
         If no CSVs are found, it alerts and exits.
@@ -248,7 +248,7 @@ class RealMarketEvaluator:
         for f in files:
             self.process_file(f)
 
-    def process_file(self, csv_path: str):
+    def process_file(self, csv_path: str) -> None:
         filename = os.path.basename(csv_path)
         logger.info(f"Processing: {filename}")
 
@@ -317,9 +317,9 @@ class RealMarketEvaluator:
             tf_str, window, can_compare_market
         )
 
-    def _generate_plot(self, t_data, S_data, V_market, V_analytical, V_pred, sigma_data,
-                       filename, rmse_mkt, corr_mkt, rmse_anal, corr_anal,
-                       tf_str, window_size, can_compare_market):
+    def _generate_plot(self, t_data: np.ndarray, S_data: np.ndarray, V_market: np.ndarray, V_analytical: np.ndarray, V_pred: np.ndarray, sigma_data: np.ndarray,
+                       filename: str, rmse_mkt: float, corr_mkt: float, rmse_anal: float, corr_anal: float,
+                       tf_str: str, window_size: int, can_compare_market: bool) -> None:
         """
         Generates the evaluation plot. 
         If mismatch (can_compare_market=False):

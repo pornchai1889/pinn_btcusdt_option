@@ -1,13 +1,14 @@
 # src/data/normalizer.py
 import numpy as np
 import torch
+from typing import Union, Dict, Any
 
 class MarketNormalizer:
     """
     Handles all normalization and denormalization logic for the PINN model.
     Scaling strategy: Min-Max Normalization to range [0, 1].
     """
-    def __init__(self, config):
+    def __init__(self, config : Dict[str, Any]):
         self.config = config
         market_params = config['market']
         
@@ -18,15 +19,15 @@ class MarketNormalizer:
         self.sigma_range = market_params['sigma_range']
         self.r_range = market_params['r_range']
         
-    def _normalize(self, val, v_range):
+    def _normalize(self, val: Union[np.ndarray, torch.Tensor, float], v_range: list[float]) -> Union[np.ndarray, torch.Tensor, float]:
         """Helper: Linear scaling to [0, 1]"""
         return (val - v_range[0]) / (v_range[1] - v_range[0])
 
-    def _denormalize(self, val, v_range):
+    def _denormalize(self, val: Union[np.ndarray, torch.Tensor, float], v_range: list[float]) -> Union[np.ndarray, torch.Tensor, float]:
         """Helper: Inverse scaling from [0, 1] to original domain"""
         return val * (v_range[1] - v_range[0]) + v_range[0]
 
-    def normalize_batch(self, t, S, sigma, r, K):
+    def normalize_batch(self, t: np.ndarray, S: np.ndarray, sigma: np.ndarray, r: np.ndarray, K: np.ndarray) -> np.ndarray:
         """
         Normalizes a batch of physical inputs.
         Returns: Numpy array of shape (N, 5) -> [t, S, sigma, r, K]
@@ -40,7 +41,7 @@ class MarketNormalizer:
         # Stack into a single matrix for model input
         return np.concatenate([t_norm, S_norm, sig_norm, r_norm, K_norm], axis=1)
 
-    def denormalize_batch(self, x_norm):
+    def denormalize_batch(self, x_norm: Union[np.ndarray, torch.Tensor]) -> tuple[Union[np.ndarray, torch.Tensor], ...]:
         """
         Denormalizes a batch of model inputs back to physical values.
         Supports both Numpy arrays and PyTorch Tensors.
@@ -62,14 +63,14 @@ class MarketNormalizer:
         
         return t, S, sigma, r, K
 
-    def normalize_price(self, price, K):
+    def normalize_price(self, price: Union[np.ndarray, torch.Tensor], K: Union[np.ndarray, torch.Tensor]) -> Union[np.ndarray, torch.Tensor]:
         """
         Normalizes the Option Price.
         Standard practice: V_norm = V / K
         """
         return price / (K + 1e-8) # Add epsilon to avoid div by zero
 
-    def denormalize_price(self, price_norm, K):
+    def denormalize_price(self, price_norm: Union[np.ndarray, torch.Tensor], K: Union[np.ndarray, torch.Tensor]) -> Union[np.ndarray, torch.Tensor]:
         """
         Denormalizes the Option Price.
         V = V_norm * K

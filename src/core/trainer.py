@@ -3,8 +3,9 @@ import os
 import logging
 import torch
 import torch.nn as nn
-from tqdm import tqdm
 import numpy as np
+from tqdm import tqdm
+from typing import Dict, Any, Optional, Union, List
 
 # Internal modules
 from src.models.pinn_net import UniversalPINN
@@ -26,9 +27,9 @@ class Trainer:
     - Incorporated 'Kink Loss' with configurable sampling multiplier.
     - Refactored Loss Weights to be fully configurable via config.yaml.
     """
-    def __init__(self, config, physics_engine: OptionPhysics, 
+    def __init__(self, config: Dict[str, Any], physics_engine: OptionPhysics, 
                  data_generator: DataGenerator, visualizer: Visualizer,
-                 run_dir, mode='scratch', checkpoint_path=None):
+                 run_dir: str, mode: str ='scratch', checkpoint_path: Optional[str]=None):
         
         self.config = config
         self.physics = physics_engine
@@ -58,8 +59,8 @@ class Trainer:
             'bvp_min': [], 'bvp_max': [],
             'kink': [] 
         }
-        
-    def _init_model(self, mode, checkpoint_path):
+
+    def _init_model(self, mode: str, checkpoint_path: Optional[str]) -> None:
         """Initialize model architecture and load weights if needed."""
         self.model = UniversalPINN(self.config).to(self.device)
         if mode == 'finetune':
@@ -69,7 +70,7 @@ class Trainer:
             else:
                 raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
             
-    def _prepare_validation_set(self):
+    def _prepare_validation_set(self) -> None:
         """
         Pre-calculate Validation Sets (General & Kink) and their Ground Truths.
         Executed once at initialization to minimize overhead during training loops.
@@ -105,7 +106,7 @@ class Trainer:
         # Pre-allocating array avoids recreating it every epoch.
         self.val_kink_true = np.zeros(n_kink_val, dtype=np.float32)
 
-    def train(self):
+    def train(self) -> None:
         """Main execution loop."""
         conf_train = self.config['training']
         epochs = conf_train['epochs']
@@ -150,7 +151,7 @@ class Trainer:
             self.viz.plot_loss_history(self.history)
             logging.info("Training workflow complete.")
 
-    def _train_step(self):
+    def _train_step(self) -> Dict[str, float]:
         """Single optimization step with configurable weighted losses."""
         self.model.train()
         self.optimizer.zero_grad()
@@ -215,7 +216,7 @@ class Trainer:
             'kink': loss_kink.item()
         }
 
-    def _validate(self, epoch, loss_dict):
+    def _validate(self, epoch: int, loss_dict: Dict[str, float]) -> None:
         """
         Validation routine using MetricsCalculator.
         Uses pre-calculated tensors for efficiency.
@@ -244,7 +245,7 @@ class Trainer:
             metrics.update(kink_metrics)
             self.logger.log_validation_metrics(epoch, metrics, loss_dict)
 
-    def _save_snapshot(self, tag, is_final=False):
+    def _save_snapshot(self, tag: Union[str, int], is_final: bool=False) -> None:
         """
         Saves the model and generates performance plots.
         Args:
@@ -274,7 +275,7 @@ class Trainer:
         except Exception as e:
             logging.error(f"Failed to generate checkpoint plots: {e}")
 
-    def _update_history(self, losses):
+    def _update_history(self, losses : Dict[str, float]) -> None:
         """Update internal history list for final plotting."""
         self.history['total'].append(losses['total'])
         self.history['pde'].append(losses['pde'])
@@ -285,7 +286,7 @@ class Trainer:
         self.history['bvp_max'].append(losses['bvp_max'])
         self.history['kink'].append(losses['kink']) 
 
-    def _to_tensor(self, array, requires_grad=False):
+    def _to_tensor(self, array: np.ndarray, requires_grad: bool=False) -> torch.Tensor:
         t = torch.from_numpy(array).float().to(self.device)
         if requires_grad:
             t.requires_grad = True
