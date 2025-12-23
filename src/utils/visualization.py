@@ -745,7 +745,11 @@ class Visualizer:
         # 2. Identify Outliers
         flat_data = data.flatten()
         outliers_mask = (flat_data < m_min) | (flat_data > m_max)
-        n_out = np.sum(outliers_mask)
+
+        # [Fixed]: Explicitly cast numpy scalar to Python int.
+        # This resolves Mypy ambiguity errors (specifically in Python 3.11 envs)
+        # where np.sum() on boolean arrays might be inferred as non-integer type.
+        n_out = int(np.sum(outliers_mask))
 
         # 3. Resample Outliers (Uniformly)
         if n_out > 0:
