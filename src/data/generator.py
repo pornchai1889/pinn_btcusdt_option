@@ -168,7 +168,12 @@ class DataGenerator:
         y_upper_norm = self.norm.normalize_price(y_upper_val, K)
 
         # Explicitly cast all outputs to numpy arrays to ensure return type consistency
-        return X_lower_norm, np.asarray(y_lower_norm), X_upper_norm, np.asarray(y_upper_norm)
+        return (
+            X_lower_norm,
+            np.asarray(y_lower_norm),
+            X_upper_norm,
+            np.asarray(y_upper_norm),
+        )
 
     def get_kink_batch(self, n_samples: int) -> np.ndarray:
         """

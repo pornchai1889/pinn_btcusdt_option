@@ -34,7 +34,7 @@ class BinanceDataFetcher:
             if current_start >= end_ms:
                 self.logger.info("Reached target end time.")
                 break
-            
+
             # Explicitly type the params dictionary to satisfy Mypy strict checking for requests.get
             params: Dict[str, Union[str, int]] = {
                 "symbol": symbol,

@@ -65,7 +65,7 @@ class PutOption(OptionPhysics):
             r_t = torch.as_tensor(r, device=t.device, dtype=t.dtype)
             K_t = torch.as_tensor(K, device=t.device, dtype=t.dtype)
             return K_t * torch.exp(-r_t * t)
-            
+
         return K * np.exp(-r * t)
 
     def boundary_condition_upper(
