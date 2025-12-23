@@ -72,8 +72,13 @@ class CallOption(OptionPhysics):
     ) -> Union[np.ndarray, torch.Tensor]:
         """
         Upper Boundary Condition (S -> Maximum).
-        For a Call Option, as Spot Price increases (Maximum), Price -> S - K * exp(-rt).
+        Formula: S - K * exp(-rt)
         """
         if isinstance(t, torch.Tensor):
-            return S_max - K * torch.exp(-r * t)
+            # Explicit conversions for strict type safety
+            S_max_t = torch.as_tensor(S_max, device=t.device, dtype=t.dtype)
+            K_t = torch.as_tensor(K, device=t.device, dtype=t.dtype)
+            r_t = torch.as_tensor(r, device=t.device, dtype=t.dtype)
+            return S_max_t - K_t * torch.exp(-r_t * t)
+
         return S_max - K * np.exp(-r * t)

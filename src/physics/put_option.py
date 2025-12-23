@@ -55,14 +55,17 @@ class PutOption(OptionPhysics):
         t: Union[torch.Tensor, np.ndarray],
         r: Union[torch.Tensor, np.ndarray],
         K: Union[torch.Tensor, np.ndarray],
-    ):
+    ) -> Union[torch.Tensor, np.ndarray]:
         """
         Lower Boundary Condition (S -> Minimum).
-        For a Put Option, as Spot Price becomes Minimum (Deep ITM), the Option Price approaches the Present Value of K.
         Formula: K * e^(-rt)
         """
         if isinstance(t, torch.Tensor):
-            return K * torch.exp(-r * t)
+            # Explicitly cast operands to ensure PyTorch operations satisfy Mypy
+            r_t = torch.as_tensor(r, device=t.device, dtype=t.dtype)
+            K_t = torch.as_tensor(K, device=t.device, dtype=t.dtype)
+            return K_t * torch.exp(-r_t * t)
+            
         return K * np.exp(-r * t)
 
     def boundary_condition_upper(

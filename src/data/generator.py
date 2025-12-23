@@ -134,7 +134,8 @@ class DataGenerator:
         payoff = self.physics.payoff(S, K)
         y_norm = self.norm.normalize_price(payoff, K)
 
-        return X_norm, y_norm
+        # Explicitly cast to numpy array to resolve Mypy ambiguity (Union[Tensor, ndarray])
+        return X_norm, np.asarray(y_norm)
 
     def get_bvp_batch(
         self, n: int
@@ -166,7 +167,8 @@ class DataGenerator:
         y_upper_val = self.physics.boundary_condition_upper(t, S_upper, K, r)
         y_upper_norm = self.norm.normalize_price(y_upper_val, K)
 
-        return X_lower_norm, y_lower_norm, X_upper_norm, y_upper_norm
+        # Explicitly cast all outputs to numpy arrays to ensure return type consistency
+        return X_lower_norm, np.asarray(y_lower_norm), X_upper_norm, np.asarray(y_upper_norm)
 
     def get_kink_batch(self, n_samples: int) -> np.ndarray:
         """
