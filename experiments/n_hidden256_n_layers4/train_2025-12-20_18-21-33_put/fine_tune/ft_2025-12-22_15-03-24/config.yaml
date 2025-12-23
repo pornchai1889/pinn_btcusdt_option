@@ -1,0 +1,53 @@
+device: cuda:0
+experiment:
+  description: PINN for Bitcoin Option Pricing using Mixed Distribution Sampling
+  name: put
+market:
+  K_range:
+  - 10000.0
+  - 500000.0
+  K_step: 1000.0
+  S_range:
+  - 0.0
+  - 1000000.0
+  T_MAX: 0.26
+  r_range:
+  - 0.0
+  - 0.15
+  sigma_range:
+  - 0.1
+  - 2.0
+  t_range:
+  - 0.0
+  - 0.26
+model:
+  hidden_activation: tanh
+  n_hidden: 256
+  n_input: 5
+  n_layers: 4
+  n_output: 1
+  output_activation: softplus
+sampling:
+  adaptive_std: 1.0
+  moneyness_range:
+  - 0.0
+  - 2.0
+  time_sampling_power: 2.0
+training:
+  bvp_loss_weight: 20.0
+  checkpoint_epochs: 10000
+  epochs: 600000
+  ivp_loss_weight: 20.0
+  kink_loss_weight: 100.0
+  lr: 1.0e-05
+  mode: finetune
+  n_kink_val_sample: 20000
+  n_sample_data: 10000
+  n_sample_kink_multiplier: 0.5
+  n_sample_pde_multiplier: 4.0
+  n_val_sample: 100000
+  physics_loss_weight: 1.0
+  val_interval: 1000
+validation_params:
+  fix_r: 0.05
+  fix_sigma: 0.5

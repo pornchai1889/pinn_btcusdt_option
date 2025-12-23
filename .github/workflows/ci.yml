@@ -1,3 +1,5 @@
+# .github/workflows/ci.yml
+# Continuous Integration (CI) Pipeline for PINN Finance Project
 name: PINN Finance CI Pipeline
 
 # ==============================================================================
