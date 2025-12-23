@@ -85,20 +85,20 @@ class ModelBundle:
         """
         # Extract ranges from config (assumes [min, max])
         m = self.config["market"]
-        
+
         # [Fixed] Explicitly store ranges as attributes so InferenceEngine can access them
         self.t_range = m["t_range"]
         self.S_range = m["S_range"]
         self.K_range = m["K_range"]
         self.sigma_range = m["sigma_range"]
         self.r_range = m["r_range"]
-        
+
         self.t_min, self.t_max = self.t_range
         self.S_min, self.S_max = self.S_range
         self.K_min, self.K_max = self.K_range
         self.sig_min, self.sig_max = self.sigma_range
         self.r_min, self.r_max = self.r_range
-        
+
         # Calculate denominators for chain rule derivatives
         # d(Norm)/d(Real) = 1 / (Max - Min)
         self.dt_scale = 1.0 / (self.t_max - self.t_min)
