@@ -185,6 +185,13 @@ class TestPutOptionPhysics:
         # Compute Expected Value manually
         val_expected = K_val * np.exp(-r_val * t_val)
 
+        # [Fixed] Mypy Error: Argument 1 to "isclose" has incompatible type.
+        # Solution: Assert type explicitly. This narrows the type for Mypy
+        # and also verifies runtime correctness (Tensor inputs -> Tensor output).
+        assert isinstance(
+            val_project, torch.Tensor
+        ), "Output must be a Tensor when inputs are Tensors"
+
         # Check closeness
         assert torch.isclose(
             val_project, torch.tensor(val_expected, dtype=torch.float32), atol=1e-5
