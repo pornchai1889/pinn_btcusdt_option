@@ -5,11 +5,28 @@ name: PINN Finance CD Pipeline
 # ==============================================================================
 # Trigger Strategy
 # ==============================================================================
-# 1. Push to main: Automates deployment when code is merged to the stable branch.
-# 2. Workflow Dispatch: Allows manual triggering for ad-hoc deployments or rollbacks.
+# Optimization:
+# The workflow is triggered only when changes affect the production artifacts.
+# Paths excluded in '.dockerignore' (e.g., src/tests, src/physics) are NOT
+# monitored here to prevent redundant builds.
 on:
   push:
     branches: [ "main" ]
+    paths:
+      # --- Core API & Runtime Modules ---
+      - 'src/api/**'                  # API Routes, Schemas, Services, Config
+      - 'src/models/**'               # Neural Network Architectures (PINN)
+      - 'src/data/normalizer.py'      # Specific Data Utility required for Inference
+
+      # --- Build Context & Configuration ---
+      - 'Dockerfile'                  # Container Definition
+      - '.dockerignore'               # Build Context Exclusion Rules
+      - 'requirements.inference.txt'  # Python Dependencies for Production
+
+      # --- Pipeline Configuration ---
+      - '.github/workflows/cd.yml'    # Self-Maintenance: Trigger on pipeline updates
+
+  # Allows manual triggering via GitHub Actions UI
   workflow_dispatch:
 
 # ==============================================================================
