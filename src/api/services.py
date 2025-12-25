@@ -5,7 +5,7 @@ import yaml
 import torch
 import logging
 import numpy as np
-from typing import Dict, Tuple, Any, Optional
+from typing import Dict, Tuple, Any, Optional, List  # Added List
 from pathlib import Path
 
 # Project Modules
@@ -86,7 +86,6 @@ class ModelBundle:
         # Extract ranges from config (assumes [min, max])
         m = self.config["market"]
 
-        # [Fixed] Explicitly store ranges as attributes so InferenceEngine can access them
         self.t_range = m["t_range"]
         self.S_range = m["S_range"]
         self.K_range = m["K_range"]
@@ -100,7 +99,6 @@ class ModelBundle:
         self.r_min, self.r_max = self.r_range
 
         # Calculate denominators for chain rule derivatives
-        # d(Norm)/d(Real) = 1 / (Max - Min)
         self.dt_scale = 1.0 / (self.t_max - self.t_min)
         self.dS_scale = 1.0 / (self.S_max - self.S_min)
         self.dsig_scale = 1.0 / (self.sig_max - self.sig_min)
@@ -118,11 +116,6 @@ class InferenceEngine:
     ):
         """
         Initializes the engine with dual models (Call & Put).
-
-        Args:
-            call_model_dir: Path to the training run directory for Call Option.
-            put_model_dir: Path to the training run directory for Put Option.
-            device_str: 'cpu' or 'cuda'.
         """
         self.device = torch.device(device_str if torch.cuda.is_available() else "cpu")
         logger.info(f"Initializing Inference Engine on Device: {self.device}")
@@ -136,9 +129,32 @@ class InferenceEngine:
 
         logger.info("Inference Engine Ready.")
 
+    def predict_batch(
+        self, requests: List[OptionPricingRequest]
+    ) -> List[PricingResponse]:
+        """
+        Orchestrates batch processing for a list of requests.
+
+        Args:
+            requests (List[OptionPricingRequest]): The list of input parameters.
+
+        Returns:
+            List[PricingResponse]: The list of corresponding predictions.
+        """
+        # Note: While full vectorization (stacking tensors) is possible,
+        # strictly iterative processing is used here to guarantee the integrity
+        # of the Autograd chain rule which is highly sensitive to tensor shapes
+        # in the current architecture. This removes HTTP overhead, which is the
+        # primary bottleneck.
+
+        results = []
+        for req in requests:
+            results.append(self.predict(req))
+        return results
+
     def predict(self, request: OptionPricingRequest) -> PricingResponse:
         """
-        Main entry point for pricing requests.
+        Main entry point for single pricing requests.
         Orchestrates input normalization, model inference, and Greek calculation.
         """
         start_time = time.perf_counter()
@@ -151,7 +167,6 @@ class InferenceEngine:
         )
 
         # 2. Prepare Tensors with Gradient Tracking (Essential for Greeks)
-        # Inputs: t, S, sigma, r, K
         inputs_norm, K_norm = self._prepare_inputs(request, bundle)
 
         # 3. Perform Inference & Autograd
@@ -176,7 +191,6 @@ class InferenceEngine:
         Normalizes inputs and creates PyTorch tensors requiring gradients.
         """
         # Normalize inputs using the bundle's normalizer
-        # Note: We create numpy arrays first
         t_n = bundle.normalizer._normalize(req.time_to_maturity, bundle.t_range)
         S_n = bundle.normalizer._normalize(req.spot_price, bundle.S_range)
         sig_n = bundle.normalizer._normalize(req.volatility, bundle.sigma_range)
@@ -189,11 +203,6 @@ class InferenceEngine:
 
         # Create Tensor and enable grad
         x_tensor = torch.tensor(x_np, device=self.device, requires_grad=True)
-
-        # Also return Normalized K tensor for denormalization later
-        # (Since Model Output is V/K, we need K_norm to reconstruct V, but actually we need Real K)
-        # We pass K_norm just in case, but usually we multiply by Real K.
-        # However, for Autograd w.r.t inputs, x_tensor contains K_norm at index 4.
 
         return x_tensor, torch.tensor([K_n], device=self.device)
 
@@ -209,17 +218,10 @@ class InferenceEngine:
         v_ratio_pred = bundle.model(x_tensor)
 
         # Real Price V = Ratio * K
-        # We perform this multiplication symbolically to let gradients flow back to K if needed
-        # But 'req.strike_price' is a float constants here for the multiplication scope.
-        # To get proper derivatives w.r.t S, t, etc., we treat V_real as a function of x_tensor.
-        # But wait, K is also an input in x_tensor[:, 4].
-        # For Greeks definition, K is constant when finding Delta (dV/dS).
-
-        # Calculate Real Price for Output
         price_pred = v_ratio_pred.item() * req.strike_price
 
         # --- Autograd for Greeks ---
-        # We need gradients of V_ratio w.r.t Normalized Inputs [t_n, S_n, sig_n, r_n, K_n]
+        # We need gradients of V_ratio w.r.t Normalized Inputs
         grads = torch.autograd.grad(
             outputs=v_ratio_pred,
             inputs=x_tensor,
@@ -240,34 +242,21 @@ class InferenceEngine:
             outputs=dv_ds_n,
             inputs=x_tensor,
             grad_outputs=torch.ones_like(dv_ds_n),
-            create_graph=False,  # No need for 3rd order
+            create_graph=False,
         )[0]
         d2v_ds2_n = grad_gamma[0, 1]
 
         # --- Chain Rule: Convert Normalized Gradients to Physical Greeks ---
-        # V = V_ratio * K_real
-        # Let y = V_ratio
-        # Delta = dV/dS = K * (dy/dS_n) * (dS_n/dS)
-
         K = req.strike_price
 
         # 1. Delta (dV/dS)
         delta = K * dv_ds_n.item() * bundle.dS_scale
 
         # 2. Gamma (d^2V/dS^2)
-        # Gamma = d/dS (Delta) = K * d/dS_n (dy/dS_n * dS_scale) * dS_n/dS
-        #       = K * (d^2y/dS_n^2) * (dS_scale)^2
         gamma = K * d2v_ds2_n.item() * (bundle.dS_scale**2)
 
-        # 3. Theta (dV/dt)
-        # Typically Theta is time decay (-dV/dt) or sensitivity to time passage.
-        # PINN t input is usually "Time to Maturity" (tau).
-        # If t = tau: dV/dt_calendar = - dV/dtau
-        # We calculate sensitivity to input t (tau).
+        # 3. Theta (dV/dt) -> Adjusted for Time Decay definition (Negative)
         theta_wrt_tau = K * dv_dt_n.item() * bundle.dt_scale
-        # Financial Theta is usually negative per day or year. We return dV/d(TimeMaturity).
-        # Usually Theta = dV/dt_calendar = - dV/d_tau.
-        # We will return -1 * theta_wrt_tau to align with standard definition (Time Decay).
         theta = -1.0 * theta_wrt_tau
 
         # 4. Vega (dV/dSigma)
@@ -281,10 +270,5 @@ class InferenceEngine:
         )
 
 
-# ==============================================================================
-# Factory / Singleton Instantiation (Optional)
-# ==============================================================================
-# This allows 'server.py' to import 'inference_engine' directly.
-# Paths should ideally come from environment variables or a global config.
-# For now, we leave it as None to be initialized by server.py startup event.
+# Singleton Instantiation
 inference_engine: Optional[InferenceEngine] = None

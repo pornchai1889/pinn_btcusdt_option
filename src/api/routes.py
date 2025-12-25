@@ -1,13 +1,12 @@
 # src/api/routes.py
 import logging
 from fastapi import APIRouter, HTTPException, Depends, status
-from typing import Dict, Any
+from typing import Dict, Any, List  # Added List
 
 # Project Modules
 from src.api.schemas import OptionPricingRequest, PricingResponse
 
-# [CRITICAL CHANGE]: Import the module 'services' to access the dynamic singleton variable.
-# We also import the class 'InferenceEngine' explicitly for Type Hinting purposes.
+# Dependency Injection Setup
 import src.api.services as services
 from src.api.services import InferenceEngine
 
@@ -15,7 +14,6 @@ from src.api.services import InferenceEngine
 logger = logging.getLogger("PINN_API_Routes")
 
 # Initialize Router
-# Tags are used for grouping operations in the Swagger UI documentation
 router = APIRouter(prefix="/v1", tags=["Option Pricing Inference"])
 
 
@@ -23,17 +21,7 @@ def get_inference_engine() -> InferenceEngine:
     """
     Dependency Injection for the Inference Engine.
     Ensures that the server refuses traffic if the models are not properly loaded (Health Check).
-
-    This function accesses the singleton instance dynamically via the 'services' module namespace
-    to avoid stale reference issues caused by direct variable importing.
-
-    Raises:
-        HTTPException (503): If the inference engine singleton is not initialized.
-
-    Returns:
-        InferenceEngine: The active instance of the PINN engine.
     """
-    # Access the variable via the module namespace to get the current runtime value
     if services.inference_engine is None:
         logger.critical("Inference Engine accessed but not initialized.")
         raise HTTPException(
@@ -45,42 +33,44 @@ def get_inference_engine() -> InferenceEngine:
 
 @router.post(
     "/predict",
-    response_model=PricingResponse,
+    response_model=List[PricingResponse],  # Changed to List
     status_code=status.HTTP_200_OK,
-    summary="Compute Option Price & Greeks",
-    response_description="Returns the calculated price and sensitivity metrics (Greeks).",
+    summary="Compute Option Price & Greeks (Batch Support)",
+    response_description="Returns a list of calculated prices and sensitivity metrics.",
 )
-async def predict(
-    request: OptionPricingRequest,
+async def predict_batch(
+    requests: List[OptionPricingRequest],  # Changed to List input
     engine: InferenceEngine = Depends(get_inference_engine),
-) -> PricingResponse:
+) -> List[PricingResponse]:  # Changed return type hint
     """
-    **Main Inference Endpoint**
+    **Batch Inference Endpoint**
 
-    Performs a forward pass on the Physics-Informed Neural Network (PINN) to compute:
-    1.  **Option Price (V):** Theoretical value based on market parameters.
-    2.  **Greeks:** First and second-order derivatives (Delta, Gamma, Theta, Vega, Rho)
-        calculated via exact Automatic Differentiation (Autograd).
+    Performs a forward pass on the Physics-Informed Neural Network (PINN) for a list of requests.
+    This allows processing multiple option scenarios in a single HTTP transaction,
+    significantly reducing network overhead.
+
+    **Features:**
+    - **Batch Processing:** Accepts an array of option parameters.
+    - **Atomic Validation:** Validates all inputs before processing.
+    - **Autograd:** Computes exact Greeks (Delta, Gamma, etc.) for each item.
 
     **Error Handling:**
-    - Validates input boundaries via Pydantic schemas.
-    - Catches numerical instabilities (NaN/Inf) during Autograd execution.
+    - Returns 422 if any item in the batch violates domain constraints.
+    - Returns 500 for internal calculation errors.
     """
     try:
-        # Delegate logic to the Service Layer
-        response = engine.predict(request)
-        return response
+        # Delegate batch logic to the Service Layer
+        responses = engine.predict_batch(requests)
+        return responses
 
     except ValueError as ve:
-        # Handle mathematical domain errors (e.g., negative volatility leaked through)
-        logger.error(f"Validation/Math Error: {ve}")
+        logger.error(f"Validation/Math Error in batch: {ve}")
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Mathematical constraints violated: {str(ve)}",
         )
 
     except Exception as e:
-        # Handle unexpected runtime errors (e.g., CUDA OOM, Autograd failure)
         logger.error(f"Internal Inference Error: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -94,14 +84,7 @@ async def predict(
 async def health_check() -> Dict[str, str]:
     """
     **Kubernetes/LoadBalancer Health Check**
-
-    Verifies that:
-    1. The API Server is running.
-    2. The Inference Engine (Models) are loaded in memory.
-
-    Returns 200 OK if healthy, otherwise 503.
     """
-    # Dynamic check against the module-level variable
     if services.inference_engine is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -121,9 +104,6 @@ async def get_model_metadata(
 ) -> Dict[str, Any]:
     """
     **Research Metadata Endpoint**
-
-    Exposes technical details about the currently loaded models.
-    Useful for experiment tracking and ensuring client-side parameter alignment.
     """
     return {
         "call_model": {
