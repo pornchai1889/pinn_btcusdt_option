@@ -1,0 +1,21 @@
+# requirements.inference.txt
+# ==============================================================================
+# Production Inference Dependencies (Optimized for Docker)
+# ==============================================================================
+
+# --- API Framework & Server ---
+fastapi>=0.103.0
+uvicorn[standard]>=0.23.0
+python-multipart          # Required for processing form data in FastAPI
+
+# --- Configuration & Validation ---
+pydantic>=2.4.0
+pydantic-settings>=2.0.0
+pyyaml>=6.0               # Used in services.py for loading model config
+
+# --- Scientific Computing (Minimal) ---
+numpy>=1.24.0,<2.0.0             # Required for tensor manipulations in normalizer.py
+
+# Note: PyTorch is EXCLUDED here.
+# It will be installed explicitly in the Dockerfile using the CPU-only index
+# to prevent downloading the heavy CUDA/Nvidia drivers (~3GB savings).
