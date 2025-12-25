@@ -1,11 +1,11 @@
 # configs/ft_config.yaml
 # Configuration for Fine-tuning an existing model
-base_run_dir: "runs/train_2025-12-23_16-52-00_call"  # <--- Model path
+base_run_dir: "experiments/n_hidden256_n_layers4/train_2025-12-20_18-21-33_put/fine_tune/ft_2025-12-22_15-03-24/checkpoints/epoch_100000"  # <--- Model path
 model_checkpoint: "model.pth"      
 device: "cuda:0"  # <--- ("cuda" or "cpu")
 
 fine_tune_params:
-  epochs: 600000
+  epochs: 100000
   lr: 1.0e-5                     # Lower LR for fine-tuning
   
   # Adjusted loss weights
