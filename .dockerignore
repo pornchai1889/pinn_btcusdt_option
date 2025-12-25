@@ -1,0 +1,129 @@
+# .dockerignore
+# ==============================================================================
+# Docker Build Context Exclusions
+# ==============================================================================
+# Best Practices:
+# 1. Security: Prevent secret leakage (.env, keys).
+# 2. Performance: Reduce build context size (exclude data/logs).
+# 3. Cleanliness: Remove runtime artifacts (__pycache__) for reproducibility.
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. Security & Secrets (CRITICAL)
+# ------------------------------------------------------------------------------
+# Exclude all environment configuration and cryptographic keys to prevent
+# accidental exposure in the container image.
+.env
+.env.*
+*.pem
+*.key
+secrets/
+credentials/
+
+# ------------------------------------------------------------------------------
+# 2. Version Control & Metadata
+# ------------------------------------------------------------------------------
+# Git history is not required for production execution.
+.git/
+.gitignore
+.dockerignore
+.github/
+
+# ------------------------------------------------------------------------------
+# 3. Python Environment & Runtime Cache (OPTIMIZED)
+# ------------------------------------------------------------------------------
+# [CRITICAL UPDATE]: Using double wildcards (**/) to recursively exclude
+# artifacts from all subdirectories (e.g., src/api/__pycache__).
+
+# Bytecode cache
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+
+# Virtual Environments
+venv/
+env/
+.venv/
+
+# Testing & Type Checking Caches
+**/.pytest_cache/
+**/.mypy_cache/
+.coverage
+htmlcov/
+
+# Distribution / Packaging artifacts
+dist/
+build/
+*.egg-info/
+
+# ------------------------------------------------------------------------------
+# 4. IDE & Editor Configuration
+# ------------------------------------------------------------------------------
+# Exclude editor-specific settings to maintain environment neutrality.
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# ------------------------------------------------------------------------------
+# 5. Data, Logs & Artifacts
+# ------------------------------------------------------------------------------
+# Large binary assets and runtime logs should be mounted via volumes, not baked in.
+data/
+logs/
+runs/
+backup/
+mlruns/
+
+# Recursive exclusion for common non-code artifacts
+**/*.log
+**/*.tfevents*
+**/*.csv
+**/*.jpg
+**/*.png
+**/*.gif
+**/*.webp
+**/*.svg
+
+# --- Experiment Artifacts ---
+# Exclude heavy intermediate files inside experiments folder while preserving structure if needed.
+experiments/**/checkpoints/
+experiments/**/logs/
+experiments/**/plots/
+experiments/**/eval_results*/
+
+# ------------------------------------------------------------------------------
+# 6. Non-Production Source Code
+# ------------------------------------------------------------------------------
+# 6.1 Interactive Notebooks (Jupyter)
+**/*.ipynb
+**/.ipynb_checkpoints/
+
+# 6.2 Testing Frameworks
+# Unit tests are run in CI/CD, not in the production container.
+src/tests/
+src/**/tests/
+tests/
+conftest.py
+
+# 6.3 Non-Inference Modules (Training & Physics Core)
+# Exclude modules not required for the inference API to minimize attack surface.
+src/core/
+src/physics/
+src/utils/
+
+# 6.4 Data Pipeline Scripts
+src/data/binance_api.py
+src/data/generator.py
+src/data/raw/
+src/data/processed/
+
+# 6.5 Root Scripts & Configs
+train.py
+debug.py
+scripts/
+prototypes/
+configs/
