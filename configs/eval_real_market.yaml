@@ -1,13 +1,13 @@
 # configs/eval_real_market.yaml
 paths:
   # Path to the training run folder containing the model checkpoint
-  run_folder: "runs/train_2025-12-23_16-52-00_call"
+  run_folder: "runs/train_2025-12-24_22-39-27_put/checkpoints/epoch_90000"
   
   # Model filename (usually model.pth)
   model_filename: "model.pth"
   
   # Directory containing Raw CSV files
-  data_raw_dir: "backup/experiments/real_market_csv"
+  data_raw_dir: "experiments/real_market_csv"
   
   # Output directory for evaluation results (created inside run_folder)
   output_dirname: "eval_results"
