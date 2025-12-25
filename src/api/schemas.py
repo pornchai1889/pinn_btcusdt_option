@@ -26,29 +26,32 @@ class OptionPricingRequest(BaseModel):
     spot_price: float = Field(
         ...,
         gt=0.0,
-        description="Current market price of the underlying asset (S). Must be strictly positive (>0).",
+        le=1000000.0,
+        description="Current market price of the underlying asset (S). Range [0.0, 1000000.0].",
     )
     strike_price: float = Field(
         ...,
-        gt=0.0,
-        description="Strike price of the option (K). Must be strictly positive (>0).",
+        gt=10000.0,
+        le=500000.0,
+        description="Strike price of the option (K). Range [10000.0, 500000.0].",
     )
     time_to_maturity: float = Field(
         ...,
         ge=0.0,
-        description="Time to expiration in years (T). E.g., 0.5 for 6 months. Must be non-negative.",
+        le=0.26,
+        description="Time to expiration in years (T). E.g., 0.26 for 3 months. Must be non-negative.",
     )
     risk_free_rate: float = Field(
         ...,
         ge=0.0,
-        le=1.0,
-        description="Annualized risk-free interest rate (r). Range [0.0, 1.0] (0% to 100%).",
+        le=0.15,
+        description="Annualized risk-free interest rate (r). Range [0.0, 0.15] (0% to 15%).",
     )
     volatility: float = Field(
         ...,
-        gt=0.0,
-        le=5.0,
-        description="Annualized volatility (sigma). Range (0.0, 5.0]. Capped at 500% for model stability.",
+        gt=0.1,
+        le=2.0,
+        description="Annualized volatility (sigma). Range (0.0, 2.0]. Capped at 200% for model stability.",
     )
 
     # 2. Option Configuration
@@ -66,9 +69,9 @@ class OptionPricingRequest(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
-                "spot_price": 100.0,
-                "strike_price": 100.0,
-                "time_to_maturity": 0.25,
+                "spot_price": 96000.0,
+                "strike_price": 95000.0,
+                "time_to_maturity": 0.15,
                 "risk_free_rate": 0.05,
                 "volatility": 0.5,
                 "option_type": "call",

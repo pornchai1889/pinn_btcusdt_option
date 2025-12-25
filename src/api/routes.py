@@ -4,8 +4,12 @@ from fastapi import APIRouter, HTTPException, Depends, status
 from typing import Dict, Any
 
 # Project Modules
-from src.api.schemas import OptionPricingRequest, PricingResponse, OptionType
-from src.api.services import InferenceEngine, inference_engine
+from src.api.schemas import OptionPricingRequest, PricingResponse
+
+# [CRITICAL CHANGE]: Import the module 'services' to access the dynamic singleton variable.
+# We also import the class 'InferenceEngine' explicitly for Type Hinting purposes.
+import src.api.services as services
+from src.api.services import InferenceEngine
 
 # Setup Logger
 logger = logging.getLogger("PINN_API_Routes")
@@ -20,16 +24,23 @@ def get_inference_engine() -> InferenceEngine:
     Dependency Injection for the Inference Engine.
     Ensures that the server refuses traffic if the models are not properly loaded (Health Check).
 
+    This function accesses the singleton instance dynamically via the 'services' module namespace
+    to avoid stale reference issues caused by direct variable importing.
+
     Raises:
         HTTPException (503): If the inference engine singleton is not initialized.
+
+    Returns:
+        InferenceEngine: The active instance of the PINN engine.
     """
-    if inference_engine is None:
+    # Access the variable via the module namespace to get the current runtime value
+    if services.inference_engine is None:
         logger.critical("Inference Engine accessed but not initialized.")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Inference Engine is not ready. Models are loading or failed to initialize.",
         )
-    return inference_engine
+    return services.inference_engine
 
 
 @router.post(
@@ -47,8 +58,8 @@ async def predict(
     **Main Inference Endpoint**
 
     Performs a forward pass on the Physics-Informed Neural Network (PINN) to compute:
-    1.  **Option Price ($V$):** Theoretical value based on market parameters.
-    2.  **Greeks:** First and second-order derivatives ($\Delta, \Gamma, \Theta, \nu, \rho$)
+    1.  **Option Price (V):** Theoretical value based on market parameters.
+    2.  **Greeks:** First and second-order derivatives (Delta, Gamma, Theta, Vega, Rho)
         calculated via exact Automatic Differentiation (Autograd).
 
     **Error Handling:**
@@ -90,7 +101,8 @@ async def health_check() -> Dict[str, str]:
 
     Returns 200 OK if healthy, otherwise 503.
     """
-    if inference_engine is None:
+    # Dynamic check against the module-level variable
+    if services.inference_engine is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="System starting up...",
