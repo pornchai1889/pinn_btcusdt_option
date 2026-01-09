@@ -78,6 +78,7 @@ runs/
 backup/
 mlruns/
 experiments/
+models/
 
 # Recursive exclusion for common non-code artifacts
 **/*.log
@@ -90,11 +91,11 @@ experiments/
 **/*.svg
 
 # --- Experiment Artifacts ---
-# Exclude heavy intermediate files inside experiments folder while preserving structure if needed.
-experiments/**/checkpoints/
-experiments/**/logs/
-experiments/**/plots/
-experiments/**/eval_results*/
+# Exclude heavy intermediate files inside models folder while preserving structure if needed.
+models/**/checkpoints/
+models/**/logs/
+models/**/plots/
+models/**/eval_results*/
 
 # ------------------------------------------------------------------------------
 # 6. Non-Production Source Code
