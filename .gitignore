@@ -16,6 +16,7 @@ env/
 /runs/
 !/runs/.gitkeep
 /backup/
+/experiments/
 
 # Data log
 *.log
