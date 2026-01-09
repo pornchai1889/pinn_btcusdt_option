@@ -38,14 +38,14 @@ RUN pip install -r requirements.inference.txt
 # STAGE 2: Model Artifacts Injection
 # ==============================================================================
 # Copy pre-trained model weights from the host machine.
-# Ensure these paths match your local 'experiments' folder structure.
+# Ensure these paths match your local 'models' folder structure.
 
 # 1. Inject CALL Option Model
-COPY experiments/n_hidden256_n_layers4/train_2025-12-21_10-22-39_call/fine_tune/ft_2025-12-22_20-31-36 \
+COPY models/call \
      /app/models/call
 
 # 2. Inject PUT Option Model
-COPY experiments/n_hidden256_n_layers4/train_2025-12-20_18-21-33_put/fine_tune/ft_2025-12-25_14-28-13 \
+COPY models/put \
      /app/models/put
 
 # ==============================================================================

@@ -77,6 +77,7 @@ logs/
 runs/
 backup/
 mlruns/
+experiments/
 
 # Recursive exclusion for common non-code artifacts
 **/*.log
