@@ -41,11 +41,11 @@ RUN pip install -r requirements.inference.txt
 # Ensure these paths match your local 'models' folder structure.
 
 # 1. Inject CALL Option Model
-COPY models/call \
+COPY models/call/ft_2025-12-22_20-31-36 \
      /app/models/call
 
 # 2. Inject PUT Option Model
-COPY models/put \
+COPY models/put/ft_2025-12-25_14-28-13 \
      /app/models/put
 
 # ==============================================================================
