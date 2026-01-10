@@ -36,9 +36,9 @@ We formulate the option pricing problem effectively as a solution to the **Black
 
 The governing dynamics for the option price $V(S, \tau)$ are defined by the linear parabolic PDE:
 
-$$
+```math
 \mathcal{F}(V) := \frac{\partial V}{\partial \tau} - \left( \frac{1}{2}\sigma^2 S^2 \frac{\partial^2 V}{\partial S^2} + rS \frac{\partial V}{\partial S} - rV \right) = 0
-$$
+```
 
 Subject to the domain constraints: $\tau \in [0, T]$ and $S \in [0, S_{max}]$.
 
@@ -48,13 +48,13 @@ The PDE is solved subject to specific boundary and initial conditions correspond
 #### **Initial Condition (Payoff at $\tau=0$)**
 At maturity (time to maturity $\tau=0$), the option price must converge to the intrinsic payoff. This creates a non-differentiable point ("Kink") at the strike price $K$:
 
-$$
+```math
 V(S, 0) =
 \begin{cases} 
 \max(S - K, 0) & \text{for Call Option} \\
 \max(K - S, 0) & \text{for Put Option}
 \end{cases}
-$$
+```
 
 #### **Boundary Conditions (Spatial Extremes)**
 We enforce Dirichlet boundary conditions derived from the asymptotic behavior of the asset price $S$:
@@ -63,64 +63,70 @@ We enforce Dirichlet boundary conditions derived from the asymptotic behavior of
 We enforce Dirichlet boundary conditions derived from the asymptotic behavior of the asset price $S$:
 
 * **Lower Boundary ($S \to 0$):**
-<p align="center">
-  <img src="https://latex.codecogs.com/svg.latex?\color{White}V(S,\tau)=\begin{cases}0&\text{for Call Option}\\Ke^{-r\tau}&\text{for Put Option}\end{cases}" />
-</p>
+```math
+V(S, \tau) =
+\begin{cases} 
+0 & \text{for Call Option} \\
+K e^{-r\tau} & \text{for Put Option}
+\end{cases}
+```
 
 * **Upper Boundary ($S \to S_{max}$):**
-<p align="center">
-  <img src="https://latex.codecogs.com/svg.latex?\color{White}V(S,\tau)=\begin{cases}S-Ke^{-r\tau}&\text{for Call Option}\\0&\text{for Put Option}\end{cases}" />
-</p>
+```math
+V(S, \tau) =
+\begin{cases} 
+S - K e^{-r\tau} & \text{for Call Option} \\
+0 & \text{for Put Option}
+\end{cases}
+```
 
 ### 2.3 Analytical Benchmark (Exact Solution)
 To validate the PINN's accuracy, we compare predictions against the closed-form **Black-Scholes Analytical Solution** ($V_{exact}$), defined as:
 
-$$
+```math
 \begin{aligned}
 V_{call} &= S \cdot \Phi(d_1) - K e^{-r\tau} \cdot \Phi(d_2) \\
 V_{put} &= K e^{-r\tau} \cdot \Phi(-d_2) - S \cdot \Phi(-d_1)
 \end{aligned}
-$$
+```
 
 Where $\Phi(\cdot)$ is the cumulative distribution function (CDF) of the standard normal distribution, and:
 
-$$
+```math
 d_1 = \frac{\ln(S/K) + (r + \frac{\sigma^2}{2})\tau}{\sigma\sqrt{\tau}}, \quad d_2 = d_1 - \sigma\sqrt{\tau}
-$$
+```
 
 ### 2.4 PINN Architecture & Composite Loss Landscape
 We approximate the solution $V(S, \tau)$ using a Deep Neural Network $\hat{V}(S, \tau, K, r, \sigma; \theta)$. The network parameters $\theta$ are optimized by minimizing a composite loss function $\mathcal{L}_{total}$ that strictly enforces physical laws and boundary constraints.
 
 A key innovation of this framework is the introduction of a **Weighted Kink Loss** ($\mathcal{L}_{Kink}$), which applies "Hard Attention" to the singularity at the strike price ($S=K, \tau=0$) to resolve gradient vanishing issues common in standard PINNs.
 
-$$
+```math
 \mathcal{L}_{total} = \lambda_{PDE}\mathcal{L}_{PDE} + \lambda_{IVP}\mathcal{L}_{IVP} + \lambda_{BVP}\mathcal{L}_{BVP} + \lambda_{Kink}\mathcal{L}_{Kink}
-$$
+```
 
 The individual loss components are defined as Mean Squared Errors (MSE):
 
-### 3.4 PINN Architecture & Composite Loss Landscape
-We approximate the solution $V(S, \tau)$ using a Deep Neural Network optimized by minimizing a composite loss function:
+1.  **Physics Loss (PDE Residual):** Enforces the Black-Scholes equation on collocation points ($N_{PDE}$).
+    ```math
+    \mathcal{L}_{PDE} = \frac{1}{N_{PDE}} \sum_{i=1}^{N_{PDE}} \left( \frac{\partial \hat{V}}{\partial \tau} - \left[ \frac{1}{2}\sigma^2 S^2 \frac{\partial^2 \hat{V}}{\partial S^2} + rS \frac{\partial \hat{V}}{\partial S} - r\hat{V} \right] \right)^2
+    ```
 
-1. **Physics Loss (PDE Residual):** Enforces the Black-Scholes equation.
-<p align="center">
-  <img src="https://latex.codecogs.com/svg.latex?\color{White}\mathcal{L}_{PDE}=\frac{1}{N_{PDE}}\sum_{i=1}^{N_{PDE}}\left(\frac{\partial\hat{V}}{\partial\tau}-\left(\frac{1}{2}\sigma^2S^2\frac{\partial^2\hat{V}}{\partial S^2}+rS\frac{\partial\hat{V}}{\partial S}-r\hat{V}\right)\right)^2" />
-</p>
+2.  **Initial Value Loss (Payoff):** Enforces the payoff structure at maturity ($N_{IVP}$).
+    ```math
+    \mathcal{L}_{IVP} = \frac{1}{N_{IVP}} \sum_{i=1}^{N_{IVP}} \left( \hat{V}(S_i, 0) - \text{Payoff}(S_i) \right)^2
+    ```
 
-2. **Initial Value Loss (Payoff):** Enforces the payoff structure at maturity.
-<p align="center">
-  <img src="https://latex.codecogs.com/svg.latex?\color{White}\mathcal{L}_{IVP}=\frac{1}{N_{IVP}}\sum_{i=1}^{N_{IVP}}\left(\hat{V}(S_i,0)-\text{Payoff}(S_i)\right)^2" />
-</p>
+3.  **Boundary Value Loss:** Enforces asymptotic behavior at $S_{min}$ and $S_{max}$ ($N_{BVP}$).
+    ```math
+    \mathcal{L}_{BVP} = \frac{1}{N_{BVP}} \left[ \sum \left( \hat{V}(S_{min}, \tau) - V_{LB} \right)^2 + \sum \left( \hat{V}(S_{max}, \tau) - V_{UB} \right)^2 \right]
+    ```
 
-3. **Boundary Value Loss:** Enforces asymptotic behavior at boundaries.
-<p align="center">
-  <img src="https://latex.codecogs.com/svg.latex?\color{White}\mathcal{L}_{BVP}=\frac{1}{N_{BVP}}\left(\sum(\hat{V}(S_{min},\tau)-V_{LB})^2+\sum(\hat{V}(S_{max},\tau)-V_{UB})^2\right)" />
-</p>
-
-4. **Kink Loss (Hard Attention):** Specifically targets the critical strike price.
-<p align="center">
-  <img src="https://latex.codecogs.com/svg.latex?\color{White}\mathcal{L}_{Kink}=\frac{1}{N_{Kink}}\sum_{j=1}^{N_{Kink}}\left(\hat{V}(K_j,0)-0\right)^2" />
-</p>is exactly 0.*
+4.  **Kink Loss (Hard Attention):** Specifically targets the critical point $S=K$ at $\tau=0$ to sharpen the hinge.
+    ```math
+    \mathcal{L}_{Kink} = \frac{1}{N_{Kink}} \sum_{j=1}^{N_{Kink}} \left( \hat{V}(K_j, 0) \right)^2
+    ```
+    *Note: For both Call and Put options, the payoff at $S=K$ is exactly 0.*
 
 ## 3. Performance & Validation
 
