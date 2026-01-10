@@ -141,6 +141,28 @@ The sampling strategy is meticulously designed to cover the 5-dimensional input 
 
 > **Training Scale:** With a dynamic sampling rate of 55,000 points per epoch across 100,000 epochs, the model absorbs the physics of **5.5 billion unique market states**, ensuring robust generalization far beyond what is possible with static historical datasets.
 
+### 2.6 Experimental Setup & Hyperparameters
+
+The following table summarizes the specific configuration used to train the **Call Option** model, detailing the market domain boundaries, neural network architecture, and hyperparameter settings defined in `config.yaml`.
+
+| Category | Parameter | Value / Range |
+| :--- | :--- | :--- |
+| **Market Domain** | Spot Price ($S$) | $0 - 1,000,000$ (USDT) |
+| | Strike Price ($K$) | $10,000 - 500,000$ (USDT) |
+| | Time to Maturity ($\tau$) | $0 - 0.26$ Years (~3 Months) |
+| | Volatility ($\sigma$) | $10\% - 200\%$ ($0.1 - 2.0$) |
+| | Risk-free Rate ($r$) | $0\% - 15\%$ ($0.0 - 0.15$) |
+| **Model Architecture** | Network Structure | 4 Layers $\times$ 256 Neurons (Fully Connected) |
+| | Activation Functions | Hidden: `Tanh` / Output: `Softplus` |
+| | Input Dimension | 5 ($S, K, \tau, r, \sigma$) |
+| **Training Config** | Total Epochs | 100,000 |
+| | Learning Rate | $1 \times 10^{-4}$ (Adam Optimizer) |
+| | Batch Sampling | ~10,000 samples/batch (Dynamic Mixed-Distribution) |
+| **Loss Weights** | $\lambda_{Kink}$ (Strike Singularity) | **100.0** (Critical Priority) |
+| | $\lambda_{IVP}$ (Payoff Condition) | 20.0 |
+| | $\lambda_{BVP}$ (Boundary Condition) | 20.0 |
+| | $\lambda_{PDE}$ (Physics Residual) | 1.0 |
+
 ## 3. Performance & Validation
 
 To demonstrate the robustness of the PINN-BTC framework, we conducted extensive evaluations across three dimensions: convergence stability, analytical accuracy against the Black-Scholes benchmark, and empirical generalization to real-world cryptocurrency market data.
