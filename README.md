@@ -143,8 +143,8 @@ We benchmarked the trained model against the exact Black-Scholes analytical solu
 Visual inspections via `plot_solution_snapshot` confirm high-fidelity reconstruction of the option pricing surface:
 * **Heatmaps:** The absolute error distribution shows negligible deviation ($< 10^{-4}$) in the ITM/OTM regions, with minor localized errors strictly confined to the ATM boundary, validating the efficacy of the hard-attention mechanism.
 * **2D Slices:**
-    * *Price vs. Spot ($S$):* Perfectly matches the analytical curve at varying times ($t=0, t=T/2$), capturing the convex payoff structure.
-    * *Price vs. Time ($\tau$):* Accurately tracks time-decay (Theta) characteristics.
+    * *Price vs. Spot* ($S$): Perfectly matches the analytical curve at varying times ($t=0, t=T/2$), capturing the convex payoff structure.
+    * *Price vs. Time* ($\tau$): Accurately tracks time-decay (Theta) characteristics.
 
 ### 3.3 Real-World Market Validation (Binance Data)
 Beyond theoretical benchmarks, we validated the model's performance on live **BTC/USDT** options data fetched directly from the **Binance API**.
