@@ -7,14 +7,13 @@
 [![Dockerized](https://img.shields.io/badge/docker-containerized-2496ED.svg?logo=docker&logoColor=white)](https://hub.docker.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-
-> **A high-fidelity deep learning framework for pricing European Options via the Black-Scholes PDE. Featuring a novel mixed-distribution sampling strategy, Kink-Weighted Loss mechanism, and real-time validation against Binance market data.**
+>**A universal deep learning solver for European Options, designed to generalize across diverse market regimes via a 5-dimensional input space ($S, K, \tau, r, \sigma$). Featuring a novel mixed-distribution sampling strategy, Kink-Weighted Loss mechanism, and real-time validation against Binance market data.**
 
 ## Abstract
 
-This study presents a novel **Physics-Informed Neural Network (PINN)** framework for real-time pricing of European options in the cryptocurrency market. While traditional deep learning approaches often suffer from overfitting due to reliance on limited historical data, and numerical methods (e.g., Finite Difference) entail high computational costs, our approach leverages the governing **Black-Scholes Partial Differential Equation (PDE)** directly as a regularization mechanism. This ensures theoretical consistency while maximizing generalization capabilities.
+This study presents a **universal Physics-Informed Neural Network (PINN)** framework for real-time pricing of European options, designed to generalize across a continuous 5-dimensional input space ($S, K, \tau, r, \sigma$). While traditional deep learning approaches often suffer from overfitting due to reliance on limited historical data, and numerical methods (e.g., Finite Difference) entail high computational costs, our approach leverages the governing **Black-Scholes Partial Differential Equation (PDE)** directly as a regularization mechanism.
 
-A key contribution of this work is the introduction of a **Mixed-Distribution Sampling Strategy**, which synthesizes Gaussian and Power-law time-distributed samples to train the model on millions of stochastic market scenarios, eliminating the dependency on labeled datasets. Furthermore, we address the gradient discontinuity problem at the strike price through a specialized **Weighted Kink Loss**, enabling the model to capture high-curvature pricing dynamics with superior precision compared to standard loss functions.
+**Unlike traditional models limited by finite historical records, this framework is trained on a massive scale of over 5.5 billion physics-compliant stochastic scenarios, effectively covering nearly all theoretical market regimes.** This is achieved via a novel **Mixed-Distribution Sampling Strategy**, which synthesizes Gaussian and Power-law time-distributed samples to eliminate dependency on labeled datasets. Furthermore, we address the gradient discontinuity problem at the strike price through a specialized **Weighted Kink Loss**, enabling the model to capture high-curvature pricing dynamics with superior precision.
 
 Empirical validation was conducted using real-world **Bitcoin (BTC/USDT)** options data retrieved via the Binance API. The results demonstrate that the proposed PINN framework not only aligns with analytical benchmarks but also exhibits robust performance in volatile market conditions. The final model is containerized and deployed via FastAPI, achieving millisecond-latency inference suitable for high-frequency trading and production-grade financial engineering tasks.
 
@@ -32,6 +31,7 @@ Our approach specifically addresses the limitations of standard deep learning in
 ## 2. Methodology
 
 ### 2.1 Governing Dynamics: Black-Scholes PDE
+
 We formulate the option pricing problem effectively as a solution to the **Black-Scholes Partial Differential Equation (PDE)**. To enhance numerical stability and align with the model's inference logic (where options are priced based on remaining duration), we perform a variable transformation from calendar time $t$ to **Time to Maturity** $\tau = T - t$.
 
 The governing dynamics for the option price $V(S, \tau)$ are defined by the linear parabolic PDE:
@@ -43,9 +43,11 @@ The governing dynamics for the option price $V(S, \tau)$ are defined by the line
 Subject to the domain constraints: $\tau \in [0, T]$ and $S \in [0, S_{max}]$.
 
 ### 2.2 Initial and Boundary Value Problems (IBVP)
+
 The PDE is solved subject to specific boundary and initial conditions corresponding to European Options. We rigorously define these conditions for both Call and Put options as follows:
 
 #### **Initial Condition (Payoff at $\tau=0$)**
+
 At maturity (time to maturity $\tau=0$), the option price must converge to the intrinsic payoff. This creates a non-differentiable point ("Kink") at the strike price $K$:
 
 ```math
@@ -56,7 +58,10 @@ V(S, 0) =
 \end{cases}
 ```
 
+Note: This singularity ($C^1$ discontinuity) poses a significant challenge for standard gradient-based optimization. We specifically address this in Section 2.4 via a targeted Weighted Kink Loss.
+
 #### **Boundary Conditions (Spatial Extremes)**
+
 We enforce Dirichlet boundary conditions derived from the asymptotic behavior of the asset price $S$:
 
 * **Lower Boundary ($S \to 0$):**
@@ -125,6 +130,17 @@ The individual loss components are defined as Mean Squared Errors (MSE):
 ```
 Note: For both Call and Put options, the payoff at $S=K$ is exactly 0.
 
+### 2.5 Massive Scale Sampling Strategy (The "Mixed-Distribution" Engine)
+
+A critical advantage of this framework is the elimination of fixed datasets. Instead, we employ a **Mixed-Distribution Generator** that synthesizes training batches on-the-fly during every iteration. This ensures the model is exposed to a continuous and infinite stream of market scenarios.
+
+The sampling strategy is meticulously designed to cover the 5-dimensional input space:
+* **Spot Price ($S$):** Log-normal distribution centered around Moneyness.
+* **Time to Maturity ($\tau$):** Power-law distribution (with power=2.0) to focus learning density near expiration ($\tau \to 0$), where the option value is most non-linear.
+* **Volatility ($\sigma$) & Rate ($r$):** Uniform sampling across wide theoretical regimes.
+
+> **🚀 Training Scale:** With a dynamic sampling rate of 55,000 points per epoch across 100,000 epochs, the model absorbs the physics of **5.5 billion unique market states**, ensuring robust generalization far beyond what is possible with static historical datasets.
+
 ## 3. Performance & Validation
 
 To demonstrate the robustness of the PINN-BTC framework, we conducted extensive evaluations across three dimensions: convergence stability, analytical accuracy against the Black-Scholes benchmark, and empirical generalization to real-world cryptocurrency market data.
@@ -133,20 +149,34 @@ To demonstrate the robustness of the PINN-BTC framework, we conducted extensive 
 The model was trained for 100,000 epochs using the composite loss function described in the methodology. We monitor the evolution of individual loss components—PDE residual, Boundary conditions (IVP/BVP), and the **Weighted Kink Loss**—to ensure balanced optimization.
 
 * **Convergence Behavior:** The training history reveals that the specialized **Kink Loss** effectively accelerates learning at the critical strike price region ($S=K$), preventing the "smoothing" artifacts typically observed in standard PINNs near non-differentiable points.
-* **Loss Visualization:** (See `runs/` directory for generated plots)
-    * *Log-scale Loss History:* Demonstrates the steady decay of physics-informed residuals ($\mathcal{L}_{PDE}$) alongside data-driven constraints.
+* **Loss Visualization:** The figure below illustrates the training dynamics for the **Call Option** model.
+
+![Training Convergence Curves](runs\train_2025-12-21_10-22-39_call\detailed_training_curves.png)
+*Figure 3.1: Log-scale loss history demonstrating the steady decay of physics-informed residuals ($\mathcal{L}_{PDE}$) alongside data-driven constraints for a Call Option.*
 
 ### 3.2 Analytical Benchmarking (In-Silico Validation)
 We benchmarked the trained model against the exact Black-Scholes analytical solution across the entire domain $\tau \in [0, T]$ and $S \in [S_{min}, S_{max}]$.
 
 #### **Pricing Accuracy & Error Heatmaps**
+
 Visual inspections via `plot_solution_snapshot` confirm high-fidelity reconstruction of the option pricing surface:
+
 * **Heatmaps:** The absolute error distribution shows negligible deviation ($< 10^{-4}$) in the ITM/OTM regions, with minor localized errors strictly confined to the ATM boundary, validating the efficacy of the hard-attention mechanism.
 * **2D Slices:**
     * *Price vs. Spot* ($S$): Perfectly matches the analytical curve at varying times ($t=0, t=T/2$), capturing the convex payoff structure.
     * *Price vs. Time* ($\tau$): Accurately tracks time-decay (Theta) characteristics.
 
+![Payoff at Maturity](runs\train_2025-12-21_10-22-39_call\payoff_at_maturity_kink.png)
+*Figure 3.2: Model prediction at Maturity ($\tau=0$) demonstrating the sharp capture of the non-differentiable "Kink" at the Strike Price ($K=255,000$), validating the weighted-loss mechanism for Call Option.*
+
+![2D Scatter Comparison](runs\train_2025-12-21_10-22-39_call\scatter_comparison.png)
+*Figure 3.3: Cross-sectional comparison showing the tight alignment between Model Prediction and Analytical Solution for Call Option (Fixed parameters*: $\sigma=0.5, r=0.05, K=255,000$).
+
+![3D Surface Comparison](runs\train_2025-12-21_10-22-39_call\3d_surface_comparison.png)
+*Figure 3.4: 3D Surface reconstruction comparing PINN prediction vs. Analytical Solution for Call Option (Fixed parameters*: $\sigma=0.5, r=0.05, K=255,000$).
+
 ### 3.3 Real-World Market Validation (Binance Data)
+
 Beyond theoretical benchmarks, we validated the model's performance on live **BTC/USDT** options data fetched directly from the **Binance API**.
 
 * **Methodology:** Real-time market inputs (Spot, Strike, Time to Maturity) were fed into the model. Volatility ($\sigma$) was estimated using a trailing historical volatility window to align the physical model with market realities.
@@ -155,6 +185,12 @@ Beyond theoretical benchmarks, we validated the model's performance on live **BT
     * **MAPE (Mean Absolute Percentage Error):** Demonstrates the model's practical viability for pricing ATM and liquid ITM options.
 * **Visual Validation:** The `market_vs_model` plots illustrate that the PINN predictions tightly track the actual market bid-ask midpoints, validating the **Mixed-Distribution Sampling** strategy's ability to generalize to unseen, noisy real-world data.
 
+![Binance Monthly Option Validation](runs\train_2025-12-21_10-22-39_call\result_BTC-251226-95000-C_Quarterly_2h_sigma7day_134200.jpg)
+*Figure 3.5: Validation for **BTC Quarterly Call Option** (Exp: 26 Nov 2025, Strike: 95k) on 2h timeframe. PINN prediction vs. Market Price and Analytical using 7-day historical volatility and fixed* $r=0.05$.
+
+![Binance Quarterly Option Validation](runs\train_2025-12-21_10-22-39_call\result_BTC-251128-100000-C_Monthly_1h_sigma7day_134139.jpg)
+*Figure 3.6: Validation for **BTC Monthly Call Option** (Exp: 28 Dec 2025, Strike: 100k) on 1h timeframe. PINN prediction vs. Market Price and Analytical using 7-day historical volatility and fixed* $r=0.05$.
+
 ## 4. Technical Implementation
 
 To transition from theoretical modeling to a production-ready artifact, the framework is engineered with a modular architecture focusing on scalability, security, and inference latency. The implementation pipeline consists of three core stages:
@@ -162,22 +198,32 @@ To transition from theoretical modeling to a production-ready artifact, the fram
 ### 4.1 End-to-End Workflow
 The project follows a rigorous data-to-deployment pipeline:
 1.  **Data Synthesis:** The `DataGenerator` module dynamically creates mixed-distribution training batches (Gaussian + Power-law) on-the-fly, eliminating storage bottlenecks.
+
+![Moneyness Density Distribution](runs\train_2025-12-21_10-22-39_call\moneyness_density_mixed.png)
+    *Figure 4.1: Pre-training data distribution (Moneyness* $S/K$*) showcasing the Mixed-Sampling Strategy: a hybrid of Gaussian concentrations (Std Dev visualized) and Uniform dispersion to ensure robust domain coverage.*
+
+![Data Sampling Points](runs\train_2025-12-21_10-22-39_call\data_sampling_distribution.png)
+    *Figure 4.2: Snapshot of sampled collocation points for a single hypothetical training epoch. The visualization highlights the domain coverage and the density of points generated by the adaptive sampling algorithm.*
+
 2.  **Model Training:** Executed via the `Trainer` engine with configurable loss weights and automatic checkpointing to TensorBoard for real-time monitoring.
 3.  **Validation:** Automated evaluation against both Analytical Solutions (Black-Scholes) and Real-Market Data (Binance) ensures theoretical and practical integrity.
 
 ### 4.2 High-Performance Inference Engine (API)
+
 The trained models are served via a **FastAPI** microservice, designed for high-throughput financial applications:
 * **Asynchronous Architecture:** Utilizing Python's `async/await` paradigm to handle concurrent pricing requests without blocking the computation thread.
 * **Input Validation:** Strict type enforcement using **Pydantic** schemas ensures that market parameters (Spot, Strike, Time) fall within the valid training domain before inference.
 * **Dual-Model Serving:** The engine simultaneously loads both Call and Put option models, routing requests dynamically based on the instrument type.
 
 ### 4.3 Containerization & Deployment
+
 The application is fully containerized using **Docker**, adhering to DevSecOps best practices:
 * **Multi-Stage Build:** Separates the build environment from the runtime environment to minimize image size.
 * **CPU Optimization:** Explicitly targets PyTorch CPU-only binaries to reduce the container footprint (~60% size reduction) and cost, making it suitable for serverless deployment (e.g., AWS Lambda, Google Cloud Run).
 * **Security Hardening:** The container runs as a non-root user (`appuser`) to mitigate privilege escalation risks.
 
 ### 4.4 CI/CD Automation
+
 Continuous Integration and Deployment are managed via **GitHub Actions**:
 * **Automated Testing:** Unit tests for physics logic and gradient computations are triggered on every push.
 * **Linting & Formatting:** Enforces code quality standards using `ruff` or `flake8`.
