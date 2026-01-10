@@ -108,25 +108,25 @@ A key innovation of this framework is the introduction of a **Weighted Kink Loss
 The individual loss components are defined as Mean Squared Errors (MSE):
 
 1.  **Physics Loss (PDE Residual):** Enforces the Black-Scholes equation on collocation points ($N_{PDE}$).
-    ```math
-    \mathcal{L}_{PDE} = \frac{1}{N_{PDE}} \sum_{i=1}^{N_{PDE}} \left( \frac{\partial \hat{V}}{\partial \tau} - \left[ \frac{1}{2}\sigma^2 S^2 \frac{\partial^2 \hat{V}}{\partial S^2} + rS \frac{\partial \hat{V}}{\partial S} - r\hat{V} \right] \right)^2
-    ```
+```math
+\mathcal{L}_{PDE} = \frac{1}{N_{PDE}} \sum_{i=1}^{N_{PDE}} \left( \frac{\partial \hat{V}}{\partial \tau} - \left[ \frac{1}{2}\sigma^2 S^2 \frac{\partial^2 \hat{V}}{\partial S^2} + rS \frac{\partial \hat{V}}{\partial S} - r\hat{V} \right] \right)^2
+```
 
 2.  **Initial Value Loss (Payoff):** Enforces the payoff structure at maturity ($N_{IVP}$).
-    ```math
-    \mathcal{L}_{IVP} = \frac{1}{N_{IVP}} \sum_{i=1}^{N_{IVP}} \left( \hat{V}(S_i, 0) - \text{Payoff}(S_i) \right)^2
-    ```
+```math
+\mathcal{L}_{IVP} = \frac{1}{N_{IVP}} \sum_{i=1}^{N_{IVP}} \left( \hat{V}(S_i, 0) - \text{Payoff}(S_i) \right)^2
+```
 
 3.  **Boundary Value Loss:** Enforces asymptotic behavior at $S_{min}$ and $S_{max}$ ($N_{BVP}$).
-    ```math
-    \mathcal{L}_{BVP} = \frac{1}{N_{BVP}} \left[ \sum \left( \hat{V}(S_{min}, \tau) - V_{LB} \right)^2 + \sum \left( \hat{V}(S_{max}, \tau) - V_{UB} \right)^2 \right]
-    ```
+```math
+\mathcal{L}_{BVP} = \frac{1}{N_{BVP}} \left[ \sum \left( \hat{V}(S_{min}, \tau) - V_{LB} \right)^2 + \sum \left( \hat{V}(S_{max}, \tau) - V_{UB} \right)^2 \right]
+```
 
 4.  **Kink Loss (Hard Attention):** Specifically targets the critical point $S=K$ at $\tau=0$ to sharpen the hinge.
-    ```math
-    \mathcal{L}_{Kink} = \frac{1}{N_{Kink}} \sum_{j=1}^{N_{Kink}} \left( \hat{V}(K_j, 0) \right)^2
-    ```
-    *Note: For both Call and Put options, the payoff at $S=K$ is exactly 0.*
+```math
+\mathcal{L}_{Kink} = \frac{1}{N_{Kink}} \sum_{j=1}^{N_{Kink}} \left( \hat{V}(K_j, 0) \right)^2
+```
+Note: For both Call and Put options, the payoff at $S=K$ is exactly 0.
 
 ## 3. Performance & Validation
 
