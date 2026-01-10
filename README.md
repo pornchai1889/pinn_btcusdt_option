@@ -139,7 +139,7 @@ The sampling strategy is meticulously designed to cover the 5-dimensional input 
 * **Time to Maturity ($\tau$):** Power-law distribution (with power=2.0) to focus learning density near expiration ($\tau \to 0$), where the option value is most non-linear.
 * **Volatility ($\sigma$) & Rate ($r$):** Uniform sampling across wide theoretical regimes.
 
-> **🚀 Training Scale:** With a dynamic sampling rate of 55,000 points per epoch across 100,000 epochs, the model absorbs the physics of **5.5 billion unique market states**, ensuring robust generalization far beyond what is possible with static historical datasets.
+> **Training Scale:** With a dynamic sampling rate of 55,000 points per epoch across 100,000 epochs, the model absorbs the physics of **5.5 billion unique market states**, ensuring robust generalization far beyond what is possible with static historical datasets.
 
 ## 3. Performance & Validation
 
@@ -151,8 +151,8 @@ The model was trained for 100,000 epochs using the composite loss function descr
 * **Convergence Behavior:** The training history reveals that the specialized **Kink Loss** effectively accelerates learning at the critical strike price region ($S=K$), preventing the "smoothing" artifacts typically observed in standard PINNs near non-differentiable points.
 * **Loss Visualization:** The figure below illustrates the training dynamics for the **Call Option** model.
 
-![Training Convergence Curves](runs\train_2025-12-21_10-22-39_call\detailed_training_curves.png)
-*Figure 3.1: Log-scale loss history demonstrating the steady decay of physics-informed residuals ($\mathcal{L}_{PDE}$) alongside data-driven constraints for a Call Option.*
+![Training Convergence Curves](models\call\train_2025-12-21_10-22-39_call\detailed_training_curves.png)
+*Figure 3.1*: Log-scale loss history demonstrating the steady decay of physics-informed residuals ($\mathcal{L}_{PDE}$) alongside data-driven constraints for a Call Option.
 
 ### 3.2 Analytical Benchmarking (In-Silico Validation)
 We benchmarked the trained model against the exact Black-Scholes analytical solution across the entire domain $\tau \in [0, T]$ and $S \in [S_{min}, S_{max}]$.
@@ -166,14 +166,14 @@ Visual inspections via `plot_solution_snapshot` confirm high-fidelity reconstruc
     * *Price vs. Spot* ($S$): Perfectly matches the analytical curve at varying times ($t=0, t=T/2$), capturing the convex payoff structure.
     * *Price vs. Time* ($\tau$): Accurately tracks time-decay (Theta) characteristics.
 
-![Payoff at Maturity](runs\train_2025-12-21_10-22-39_call\payoff_at_maturity_kink.png)
-*Figure 3.2: Model prediction at Maturity ($\tau=0$) demonstrating the sharp capture of the non-differentiable "Kink" at the Strike Price ($K=255,000$), validating the weighted-loss mechanism for Call Option.*
+![Payoff at Maturity](models\call\train_2025-12-21_10-22-39_call\payoff_at_maturity_kink.png)
+*Figure 3.2*: Model prediction at Maturity ($\tau=0$) demonstrating the sharp capture of the non-differentiable "Kink" at the Strike Price ($K=255,000$), validating the weighted-loss mechanism for Call Option.
 
-![2D Scatter Comparison](runs\train_2025-12-21_10-22-39_call\scatter_comparison.png)
+![2D Scatter Comparison](models\call\train_2025-12-21_10-22-39_call\scatter_comparison.png)
 *Figure 3.3: Cross-sectional comparison showing the tight alignment between Model Prediction and Analytical Solution for Call Option (Fixed parameters*: $\sigma=0.5, r=0.05, K=255,000$).
 
-![3D Surface Comparison](runs\train_2025-12-21_10-22-39_call\3d_surface_comparison.png)
-*Figure 3.4: 3D Surface reconstruction comparing PINN prediction vs. Analytical Solution for Call Option (Fixed parameters*: $\sigma=0.5, r=0.05, K=255,000$).
+![3D Surface Comparison](models\call\train_2025-12-21_10-22-39_call\3d_surface_comparison.png)
+*Figure 3.4*: 3D Surface reconstruction comparing PINN prediction vs. Analytical Solution for Call Option (Fixed parameters: $\sigma=0.5, r=0.05, K=255,000$).
 
 ### 3.3 Real-World Market Validation (Binance Data)
 
@@ -185,10 +185,10 @@ Beyond theoretical benchmarks, we validated the model's performance on live **BT
     * **MAPE (Mean Absolute Percentage Error):** Demonstrates the model's practical viability for pricing ATM and liquid ITM options.
 * **Visual Validation:** The `market_vs_model` plots illustrate that the PINN predictions tightly track the actual market bid-ask midpoints, validating the **Mixed-Distribution Sampling** strategy's ability to generalize to unseen, noisy real-world data.
 
-![Binance Monthly Option Validation](runs\train_2025-12-21_10-22-39_call\result_BTC-251226-95000-C_Quarterly_2h_sigma7day_134200.jpg)
-*Figure 3.5: Validation for **BTC Quarterly Call Option** (Exp: 26 Nov 2025, Strike: 95k) on 2h timeframe. PINN prediction vs. Market Price and Analytical using 7-day historical volatility and fixed* $r=0.05$.
+![Binance Monthly Option Validation](models\call\train_2025-12-21_10-22-39_call\result_BTC-251226-95000-C_Quarterly_2h_sigma7day_134200.jpg)
+*Figure 3.5*: Validation for **BTC Quarterly Call Option** (Exp: 26 Nov 2025, Strike: 95k) on 2h timeframe. PINN prediction vs. Market Price and Analytical using 7-day historical volatility and fixed $r=0.05$.
 
-![Binance Quarterly Option Validation](runs\train_2025-12-21_10-22-39_call\result_BTC-251128-100000-C_Monthly_1h_sigma7day_134139.jpg)
+![Binance Quarterly Option Validation](models\call\train_2025-12-21_10-22-39_call\result_BTC-251128-100000-C_Monthly_1h_sigma7day_134139.jpg)
 *Figure 3.6: Validation for **BTC Monthly Call Option** (Exp: 28 Dec 2025, Strike: 100k) on 1h timeframe. PINN prediction vs. Market Price and Analytical using 7-day historical volatility and fixed* $r=0.05$.
 
 ## 4. Technical Implementation
@@ -199,11 +199,11 @@ To transition from theoretical modeling to a production-ready artifact, the fram
 The project follows a rigorous data-to-deployment pipeline:
 1.  **Data Synthesis:** The `DataGenerator` module dynamically creates mixed-distribution training batches (Gaussian + Power-law) on-the-fly, eliminating storage bottlenecks.
 
-![Moneyness Density Distribution](runs\train_2025-12-21_10-22-39_call\moneyness_density_mixed.png)
-    *Figure 4.1: Pre-training data distribution (Moneyness* $S/K$*) showcasing the Mixed-Sampling Strategy: a hybrid of Gaussian concentrations (Std Dev visualized) and Uniform dispersion to ensure robust domain coverage.*
+![Moneyness Density Distribution](models\call\train_2025-12-21_10-22-39_call\moneyness_density_mixed.png)
+    *Figure 4.1*: Pre-training data distribution (Moneyness $S/K$*) showcasing the Mixed-Sampling Strategy: a hybrid of Gaussian concentrations (Std Dev visualized) and Uniform dispersion to ensure robust domain coverage.
 
-![Data Sampling Points](runs\train_2025-12-21_10-22-39_call\data_sampling_distribution.png)
-    *Figure 4.2: Snapshot of sampled collocation points for a single hypothetical training epoch. The visualization highlights the domain coverage and the density of points generated by the adaptive sampling algorithm.*
+![Data Sampling Points](models\call\train_2025-12-21_10-22-39_call\data_sampling_distribution.png)
+    *Figure 4.2*: Snapshot of sampled collocation points for a single hypothetical training epoch. The visualization highlights the domain coverage and the density of points generated by the adaptive sampling algorithm.
 
 2.  **Model Training:** Executed via the `Trainer` engine with configurable loss weights and automatic checkpointing to TensorBoard for real-time monitoring.
 3.  **Validation:** Automated evaluation against both Analytical Solutions (Black-Scholes) and Real-Market Data (Binance) ensures theoretical and practical integrity.
