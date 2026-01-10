@@ -265,6 +265,10 @@ The project follows a rigorous data-to-deployment pipeline:
     
 *Figure 4.3*: Real-time training dashboard via TensorBoard, tracking the composite loss components and gradient histograms to diagnose convergence health.
 
+The dashboard provides comprehensive monitoring of the training dynamics, organized into two primary categories:
+
+* **Loss Landscape:** Tracks the weighted **Total Loss** and its individual components, including **PDE Residuals** (Physics compliance), **Boundary Conditions (IVP/BVP)**, and the critical **Weighted Kink Loss**, enabling real-time diagnosis of optimization stability at the strike price singularity.
+* **Validation Metrics:** Monitors generalization performance via standard regression metrics (**RMSE, MAE, SMAPE**) and statistical indicators (**Correlation/R-Score, Bias**), alongside a specialized **Kink MAE** to strictly evaluate pricing accuracy at the non-differentiable point.
 
 ### 4.2 High-Performance Inference Engine (API)
 
