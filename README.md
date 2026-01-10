@@ -151,8 +151,8 @@ The following table summarizes the specific configuration used to train the **Ca
 | | Strike Price ($K$) | $10,000 - 500,000$ (USDT) |
 | | Strike Step ($K_{step}$) | $1,000.0$ (Discrete Sampling) |
 | | Time to Maturity ($\tau$) | $0 - 0.26$ Years (~3 Months) |
-| | Volatility ($\sigma$) | $0.1 - 2.0$ ($10\% - 200\%$) |
-| | Risk-free Rate ($r$) | $0.0 - 0.15$ ($0\% - 15\%$) |
+| | Volatility ($\sigma$) | $0.1 - 2.0$ (10% - 200%) |
+| | Risk-free Rate ($r$) | $0.0 - 0.15$ (0% - 15%) |
 | **Model Architecture** | Network Structure | 4 Layers $\times$ 256 Neurons (Fully Connected) |
 | | Activation Functions | Hidden: `Tanh` / Output: `Softplus` |
 | | Input Dimension | 5 ($S, K, \tau, r, \sigma$) |
@@ -187,14 +187,13 @@ The model was trained for 100,000 epochs using the composite loss function descr
 ### 3.2 Analytical Benchmarking (In-Silico Validation)
 We benchmarked the trained model against the exact Black-Scholes analytical solution across the entire domain $\tau \in [0, T]$ and $S \in [S_{min}, S_{max}]$.
 
-#### **Pricing Accuracy & Error Heatmaps**
+#### **Pricing Accuracy & Visual Validation**
 
-Visual inspections via `plot_checkpoint_performance` confirm high-fidelity reconstruction of the option pricing surface:
+Visual inspections via `plot_checkpoint_performance` confirm high-fidelity reconstruction of the option pricing surface across the entire domain $\tau \in [0, T]$ and $S \in [S_{min}, S_{max}]$. The validation results are visualized in the figures below:
 
-* **Heatmaps:** The absolute error distribution shows negligible deviation ($< 10^{-4}$) in the ITM/OTM regions, with minor localized errors strictly confined to the ATM boundary, validating the efficacy of the hard-attention mechanism.
-* **2D Slices:**
-    * *Price vs. Spot* ($S$): Perfectly matches the analytical curve at varying times ($t=0, t=T/2$), capturing the convex payoff structure.
-    * *Price vs. Time* ($\tau$): Accurately tracks time-decay (Theta) characteristics.
+* **2D Slices & Kink Resolution:** The model perfectly matches the analytical curve at maturity ($\tau=0$), strictly capturing the non-differentiable "Kink" at the strike price ($S=K$) and the convex payoff structure. This validates the efficacy of the hard-attention mechanism.
+* **3D Surface Reconstruction:** The PINN generalizes seamlessly across the input space ($S, \tau$), forming a smooth pricing surface that aligns with the Black-Scholes benchmark. The 3D visualization confirms the absence of overfitting spikes, even in extrapolation regions.
+* **Statistical Correlation:** The scatter comparison demonstrates a tight 1:1 alignment between the predicted values and the analytical solution across diverse market states, confirming the model's precision.
 
 <p align="center">
   <img src="models/call/train_2025-12-21_10-22-39_call/payoff_at_maturity_kink.png" alt="Payoff at Maturity" width=65%" />
