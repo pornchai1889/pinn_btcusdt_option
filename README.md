@@ -217,11 +217,11 @@ Visual inspections via `plot_checkpoint_performance` confirm high-fidelity recon
 
 Beyond theoretical benchmarks, we validated the model's performance on live **BTC/USDT** options data fetched directly from the **Binance API**.
 
-* **Methodology:** Real-time market inputs (Spot, Strike, Time to Maturity) were fed into the model. Volatility ($\sigma$) was estimated using a trailing historical volatility window to align the physical model with market realities.
+* **Methodology:** **Historical market inputs** (Spot, Strike, Time to Maturity) were fed into the model. Volatility ($\sigma$) was estimated using a trailing historical volatility window to align the physical model with market realities.
 * **Performance Metrics:**
     * **Corr:** $> 0.98$ (Indicating strong correlation with market pricing).
-    * **MAPE (Mean Absolute Percentage Error):** Demonstrates the model's practical viability for pricing ATM and liquid ITM options.
-* **Visual Validation:** The `eval_real_market` plots illustrate that the PINN predictions tightly track the actual market bid-ask midpoints, validating the **Mixed-Distribution Sampling** strategy's ability to generalize to unseen, noisy real-world data.
+    * **RMSE (Root Mean Square Error):** Evaluated against both **Real Market Prices** and the **Analytical Benchmark** to strictly validate the model's precision in capturing real-world pricing dynamics while remaining consistent with theoretical physics.
+* **Visual Validation:** The `eval_real_market` plots illustrate that the PINN predictions tightly track the **historical market close prices** (derived from Binance Klines), validating the **Mixed-Distribution Sampling** strategy's ability to generalize to unseen, noisy real-world data.
 
 <p align="center">
   <img src="models/call/train_2025-12-21_10-22-39_call/result_BTC-251226-95000-C_Quarterly_2h_sigma7day_134200.jpg" alt="Binance Quarterly Option Validation" width=65%" />
