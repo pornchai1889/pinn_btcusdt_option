@@ -151,8 +151,8 @@ The following table summarizes the specific configuration used to train the **Ca
 | | Strike Price ($K$) | $10,000 - 500,000$ (USDT) |
 | | Strike Step ($K_{step}$) | $1,000.0$ (Discrete Sampling) |
 | | Time to Maturity ($\tau$) | $0 - 0.26$ Years (~3 Months) |
-| | Volatility ($\sigma$) | $0.1 - 2.0$ ($10\% - 200\%$) |
-| | Risk-free Rate ($r$) | $0.0 - 0.15$ ($0\% - 15\%$) |
+| | Volatility ($\sigma$) | $0.1 - 2.0$ (10% - 200%) |
+| | Risk-free Rate ($r$) | $0.0 - 0.15$ (0% - 15%) |
 | **Model Architecture** | Network Structure | 4 Layers $\times$ 256 Neurons (Fully Connected) |
 | | Activation Functions | Hidden: `Tanh` / Output: `Softplus` |
 | | Input Dimension | 5 ($S, K, \tau, r, \sigma$) |
