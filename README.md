@@ -59,9 +59,6 @@ V(S, 0) =
 #### **Boundary Conditions (Spatial Extremes)**
 We enforce Dirichlet boundary conditions derived from the asymptotic behavior of the asset price $S$:
 
-#### **Boundary Conditions (Spatial Extremes)**
-We enforce Dirichlet boundary conditions derived from the asymptotic behavior of the asset price $S$:
-
 * **Lower Boundary ($S \to 0$):**
 ```math
 V(S, \tau) =
