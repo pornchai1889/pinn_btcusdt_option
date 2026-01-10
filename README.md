@@ -63,22 +63,14 @@ We enforce Dirichlet boundary conditions derived from the asymptotic behavior of
 We enforce Dirichlet boundary conditions derived from the asymptotic behavior of the asset price $S$:
 
 * **Lower Boundary ($S \to 0$):**
-$$
-V(S, \tau) =
-\begin{cases} 
-0 & \text{for Call Option} \\
-K e^{-r\tau} & \text{for Put Option}
-\end{cases}
-$$
+<p align="center">
+  <img src="https://latex.codecogs.com/svg.latex?\color{White}V(S,\tau)=\begin{cases}0&\text{for Call Option}\\Ke^{-r\tau}&\text{for Put Option}\end{cases}" />
+</p>
 
 * **Upper Boundary ($S \to S_{max}$):**
-$$
-V(S, \tau) =
-\begin{cases} 
-S - K e^{-r\tau} & \text{for Call Option} \\
-0 & \text{for Put Option}
-\end{cases}
-$$
+<p align="center">
+  <img src="https://latex.codecogs.com/svg.latex?\color{White}V(S,\tau)=\begin{cases}S-Ke^{-r\tau}&\text{for Call Option}\\0&\text{for Put Option}\end{cases}" />
+</p>
 
 ### 2.3 Analytical Benchmark (Exact Solution)
 To validate the PINN's accuracy, we compare predictions against the closed-form **Black-Scholes Analytical Solution** ($V_{exact}$), defined as:
@@ -107,26 +99,28 @@ $$
 
 The individual loss components are defined as Mean Squared Errors (MSE):
 
-1.  **Physics Loss (PDE Residual):** Enforces the Black-Scholes equation on collocation points ($N_{PDE}$).
-    $$
-    \mathcal{L}_{PDE} = \frac{1}{N_{PDE}} \sum_{i=1}^{N_{PDE}} \left( \frac{\partial \hat{V}}{\partial \tau} - \left[ \frac{1}{2}\sigma^2 S^2 \frac{\partial^2 \hat{V}}{\partial S^2} + rS \frac{\partial \hat{V}}{\partial S} - r\hat{V} \right] \right)^2
-    $$
+### 3.4 PINN Architecture & Composite Loss Landscape
+We approximate the solution $V(S, \tau)$ using a Deep Neural Network optimized by minimizing a composite loss function:
 
-2.  **Initial Value Loss (Payoff):** Enforces the payoff structure at maturity ($N_{IVP}$).
-    $$
-    \mathcal{L}_{IVP} = \frac{1}{N_{IVP}} \sum_{i=1}^{N_{IVP}} \left( \hat{V}(S_i, 0) - \text{Payoff}(S_i) \right)^2
-    $$
+1. **Physics Loss (PDE Residual):** Enforces the Black-Scholes equation.
+<p align="center">
+  <img src="https://latex.codecogs.com/svg.latex?\color{White}\mathcal{L}_{PDE}=\frac{1}{N_{PDE}}\sum_{i=1}^{N_{PDE}}\left(\frac{\partial\hat{V}}{\partial\tau}-\left(\frac{1}{2}\sigma^2S^2\frac{\partial^2\hat{V}}{\partial S^2}+rS\frac{\partial\hat{V}}{\partial S}-r\hat{V}\right)\right)^2" />
+</p>
 
-3.  **Boundary Value Loss:** Enforces asymptotic behavior at $S_{min}$ and $S_{max}$ ($N_{BVP}$).
-    $$
-    \mathcal{L}_{BVP} = \frac{1}{N_{BVP}} \left[ \sum \left( \hat{V}(S_{min}, \tau) - V_{LB} \right)^2 + \sum \left( \hat{V}(S_{max}, \tau) - V_{UB} \right)^2 \right]
-    $$
+2. **Initial Value Loss (Payoff):** Enforces the payoff structure at maturity.
+<p align="center">
+  <img src="https://latex.codecogs.com/svg.latex?\color{White}\mathcal{L}_{IVP}=\frac{1}{N_{IVP}}\sum_{i=1}^{N_{IVP}}\left(\hat{V}(S_i,0)-\text{Payoff}(S_i)\right)^2" />
+</p>
 
-4.  **Kink Loss (Hard Attention):** Specifically targets the critical point $S=K$ at $\tau=0$ to sharpen the hinge.
-    $$
-    \mathcal{L}_{Kink} = \frac{1}{N_{Kink}} \sum_{j=1}^{N_{Kink}} \left( \hat{V}(K_j, 0) \right)^2
-    $$
-    *Note: For both Call and Put options, the payoff at $S=K$ is exactly 0.*
+3. **Boundary Value Loss:** Enforces asymptotic behavior at boundaries.
+<p align="center">
+  <img src="https://latex.codecogs.com/svg.latex?\color{White}\mathcal{L}_{BVP}=\frac{1}{N_{BVP}}\left(\sum(\hat{V}(S_{min},\tau)-V_{LB})^2+\sum(\hat{V}(S_{max},\tau)-V_{UB})^2\right)" />
+</p>
+
+4. **Kink Loss (Hard Attention):** Specifically targets the critical strike price.
+<p align="center">
+  <img src="https://latex.codecogs.com/svg.latex?\color{White}\mathcal{L}_{Kink}=\frac{1}{N_{Kink}}\sum_{j=1}^{N_{Kink}}\left(\hat{V}(K_j,0)-0\right)^2" />
+</p>is exactly 0.*
 
 ## 3. Performance & Validation
 
