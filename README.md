@@ -465,6 +465,6 @@ If you use this code or methodology in your research, please consider citing it 
   year = {2026},
   publisher = {GitHub},
   journal = {GitHub repository},
-  howpublished = {\url{[https://github.com/pornchai1889/pinn_btcusdt_option](https://github.com/pornchai1889/pinn_btcusdt_option)}},
+  howpublished = {\url{https://github.com/pornchai1889/pinn_btcusdt_option}},
   note = {Evaluating Black-Scholes PDE constraints with Mixed-Distribution Sampling and Kink-Weighted Loss}
 }
