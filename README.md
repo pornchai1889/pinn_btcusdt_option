@@ -19,14 +19,16 @@ Empirical validation was conducted using real-world **Bitcoin (BTC/USDT)** optio
 
 ## 1. Introduction
 
-Financial derivatives pricing, particularly for cryptocurrency options, presents a unique challenge due to the extreme volatility and non-stationary nature of digital asset markets. Traditional pricing models, such as the **Black-Scholes-Merton (BSM)** framework, rely on rigid assumptions like constant volatility and geometric Brownian motion, which often fail to capture the "fat-tailed" distributions and volatility smiles observed in real-world crypto trading. Conversely, numerical methods like Finite Difference (FDM) or Monte Carlo simulations, while accurate, are computationally expensive and ill-suited for high-frequency trading (HFT) environments that demand millisecond-latency inference.
+Financial derivatives pricing, particularly in the fast-paced cryptocurrency market, demands tools that are both **mathematically rigorous** and **computationally efficient**. While the **Black-Scholes-Merton (BSM)** framework provides the theoretical foundation for European option pricing, deploying it in high-frequency trading (HFT) environments presents practical challenges.
 
-To bridge this gap, this project introduces a **Physics-Informed Neural Network (PINN)** solver that hybridizes the data-driven power of deep learning with the governing physical laws of financial mathematics. By explicitly embedding the Black-Scholes PDE into the neural network's loss function (as originally proposed by Raissi et al.), we constrain the search space of the model, ensuring that predictions remain theoretically consistent even in regions with sparse training data.
+Traditional numerical methods, such as **Finite Difference (FDM)** or **Monte Carlo simulations**, offer high accuracy but suffer from significant computational latency, making them ill-suited for real-time risk management. On the other hand, standard **Deep Learning** approaches can accelerate inference but often act as "black boxes" that require massive labeled datasets and prone to overfitting, failing to guarantee financial consistency (e.g., no-arbitrage conditions) in unseen market regimes.
 
-Our approach specifically addresses the limitations of standard deep learning in finance by:
-1.  **Eliminating the need for massive labeled datasets:** Using a self-supervised physics loss.
-2.  **Resolving the "Strike Price Singularity":** Through a novel **Kink-Weighted Loss** that captures the sharp payoff transitions.
-3.  **Enabling Real-time Greeks:** Providing instantaneous sensitivities (Delta, Gamma, Vega) via automatic differentiation, crucial for dynamic hedging strategies.
+To bridge this gap, this project introduces a **Physics-Informed Neural Network (PINN)** solver. Instead of learning from historical price data, our model learns directly from the governing **Black-Scholes Partial Differential Equation (PDE)**. By embedding the PDE residuals into the loss function, we create a hybrid solver that combines the **theoretical guarantees** of mathematical finance with the **millisecond-latency inference** of neural networks.
+
+Our approach specifically addresses the limitations of conventional methods by:
+1.  **Eliminating Labeled Data:** The model is trained in a self-supervised manner using randomized physics-compliant scenarios.
+2.  **Resolving the "Strike Price Singularity":** Through a novel **Kink-Weighted Loss** that precisely captures the non-differentiable payoff transitions.
+3.  **Enabling Real-time Greeks:** Providing instantaneous sensitivities (Delta, Gamma, Vega) via automatic differentiation, essential for dynamic hedging strategies.
 
 ## 2. Methodology
 
@@ -468,3 +470,4 @@ If you use this code or methodology in your research, please consider citing it 
   howpublished = {\url{https://github.com/pornchai1889/pinn_btcusdt_option}},
   note = {Evaluating Black-Scholes PDE constraints with Mixed-Distribution Sampling and Kink-Weighted Loss}
 }
+```
