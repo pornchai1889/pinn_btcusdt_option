@@ -453,7 +453,7 @@ This work builds upon foundational research in scientific machine learning and q
 * **[1] Physics-Informed Neural Networks (Original Framework):**
     Raissi, M., Perdikaris, P., & Karniadakis, G. E. (2019). Physics-informed neural networks: A deep learning framework for solving forward and inverse problems involving nonlinear partial differential equations. *Journal of Computational Physics*, 378, 686-707.
 * **[2] PINNs for Option Pricing:**
-    Dhiman, A., & Hu, Y. (2021). *Physics Informed Neural Network for Option Pricing*. Georgia Institute of Technology, CS7643 Deep Learning Project.
+    Dhiman, A., & Hu, Y. (2023). *Physics Informed Neural Network for Option Pricing*. arXiv preprint arXiv:2312.06711.
 * **[3] Black-Scholes Model:**
     Black, F., & Scholes, M. (1973). The Pricing of Options and Corporate Liabilities. *Journal of Political Economy*, 81(3), 637–654.
 
