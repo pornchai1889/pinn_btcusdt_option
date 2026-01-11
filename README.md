@@ -292,42 +292,101 @@ Continuous Integration and Deployment are managed via **GitHub Actions**:
 
 ## 5. Installation & Usage
 
-To facilitate reproducibility and seamless integration into quantitative finance pipelines, we provide two deployment methods: a **Dockerized environment** (recommended for production/inference) and a **Local Python environment** (recommended for research/training).
+To facilitate reproducibility and seamless integration into quantitative finance pipelines, we provide deployment methods via **Docker** (recommended for production) and **Local Python environment** (for research/training).
 
 ### 5.1 Prerequisites
-* **Docker Engine:** Version 20.10+ (for containerized deployment).
-* **Python:** Version 3.10+ (for local development).
-* **Git:** To clone the repository.
+* **Docker Engine:** Version 20.10+ (Required for containerized deployment).
+* **Python:** Version 3.10+ (Required only for local development/retraining).
+* **Git:** (Optional) To clone the repository if building from source.
 
-### 5.2 Docker Deployment
-We utilize a multi-stage Docker build optimized for CPU inference, significantly reducing the image size and ensuring consistency across different operating systems.
+### 5.2 Docker Deployment (Production Ready)
 
-**1. Build the Image:**
+Since the project maintains a **Continuous Deployment (CD)** pipeline, the latest stable model is automatically built and hosted on Docker Hub. You do **not** need to clone the repository to run the inference engine.
+
+**Option A: Pull from Docker Hub (Recommended)**
+This is the fastest way to get the PINN solver running with the best pre-trained weights.
+
+**1. Pull the Image:**
+```bash
+docker pull panglearning1991/pinn-api:latest
+```
+
+**2. Initial Setup (Run First Time Only):**
+Create and start the container. This command binds the API to port 8000.
+
+```bash
+docker run -d -p 8000:8000 --name pinn-cloud-api panglearning1991/pinn-api:latest
+```
+
+> **Note:** If you see an error saying *"The container name is already in use"*, it means you have already set up the container. Please skip to step 3 to start it.
+
+**3. Manage the Container (Daily Usage):**
+Once the container is created, use these commands to control it instead of running `docker run` again.
+
+* **Check Status:**
+```bash
+docker ps       # View running containers
+docker ps -a    # View all containers (including stopped ones)
+```
+
+* **Stop the Service:**
+```bash
+docker stop pinn-cloud-api
+```
+
+* **Start the Service (Resume):**
+```bash
+docker start pinn-cloud-api
+```
+
+**Option B: Build from Source (For Developers)**
+Use this method only if you intend to modify the source code, retrain the model, or customize the Dockerfile.
+
+1.  **Build the Image:**
+
 ```bash
 docker build -t pinn-btc-option .
 ```
-**2. Run the Container:**
-Expose the FastAPI inference engine on port 8000:
+
+2.  **Run the Local Build:**
+
 ```bash
 docker run -d -p 8000:8000 --name pinn-container pinn-btc-option
 ```
 
-**3. Test the API:** Once running, the interactive documentation (Swagger UI) is available at http://localhost:8000/docs. You can also send a pricing request via curl:
+### 5.3 Verify the API
+Once the container is running (via either option), the interactive documentation (Swagger UI) is available at http://localhost:8000/docs.
+
+You can also send a **batch pricing request** via terminal (using Git Bash or curl):
+
 ```bash
 curl -X 'POST' \
-  'http://localhost:8000/api/v1/price' \
+  'http://localhost:8000/v1/predict' \
+  -H 'accept: application/json' \
   -H 'Content-Type: application/json' \
-  -d '{
-  "spot_price": 45000.0,
-  "strike_price": 46000.0,
-  "time_to_maturity": 0.5,
-  "risk_free_rate": 0.02,
-  "volatility": 0.6,
-  "option_type": "call"
-}'
+  -d '[
+  {
+    "spot_price": 96000.0,
+    "strike_price": 95000.0,
+    "time_to_maturity": 0.15,
+    "risk_free_rate": 0.05,
+    "volatility": 0.5,
+    "option_type": "call",
+    "request_id": "scenario-1"
+  },
+  {
+    "spot_price": 96000.0,
+    "strike_price": 95000.0,
+    "time_to_maturity": 0.15,
+    "risk_free_rate": 0.05,
+    "volatility": 0.5,
+    "option_type": "put",
+    "request_id": "scenario-2"
+  }
+]'
 ```
 
-### 5.3 Local Development Setup
+### 5.4 Local Development Setup
 For researchers intending to modify the network architecture or loss functions:
 
 **1. Clone and Setup:**
@@ -345,7 +404,7 @@ source venv/bin/activate  # On Windows use: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 5.4 Operational Commands
+### 5.5 Operational Commands
 **Training the Model**
 to train the PINN from scratch using the mixed-distribution sampling strategy:
 ```bash
