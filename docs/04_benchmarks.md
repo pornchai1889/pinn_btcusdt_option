@@ -32,7 +32,7 @@ Thanks to our **Weighted Kink Loss** strategy, the PINN-BTC solver exhibits shar
 *Figure 2*: Payoff function at maturity ($\tau=0$). The model strictly adheres to the $C^0$ continuity while preserving the sharp hinge at the strike price ($K$), validating the efficacy of the Hard Attention mechanism.
 
 ### 1.3 Statistical Alignment
-Cross-sectional regression analysis between the predicted values and the ground truth demonstrates a near-perfect linear correlation ($R^2 > 0.99$), indicating unbiased estimation across diverse volatility regimes ($\sigma \in [0.1, 2.0]$).
+Cross-sectional regression analysis between the predicted values and the ground truth demonstrates a near-perfect linear correlation (Corr > 0.99), indicating unbiased estimation across diverse volatility regimes ($\sigma \in [0.1, 2.0]$).
 
 <p align="center">
   <img src="../models/call/train_2025-12-21_10-22-39_call/scatter_comparison.png" alt="Scatter Comparison" width=65%" />
