@@ -74,13 +74,130 @@ We tested the model on multiple expiration cycles (Monthly/Quarterly) during hig
 
 ## 3. Performance Metrics Definition
 
-To ensure reproducibility, we define the key metrics used in our evaluation pipelines:
+To ensure a rigorous evaluation of the **PINN-BTC** solver, covering both mathematical generalization across the high-dimensional domain and empirical applicability in live financial markets, we classify our performance metrics into two distinct categories based on the evaluation context:
 
-1.  **Physics Loss ($\mathcal{L}_{PDE}$):** Measures the violation of the Black-Scholes equation.
-    $$\mathcal{L}_{PDE} = \frac{1}{N} \sum ||\mathcal{N}[\hat{V}]||^2$$
-2.  **Kink Error (MAE at Strike):** Specifically measures precision at the point of maximum convexity.
-    $$\text{KinkMAE} = \frac{1}{N} \sum_{S=K} |\hat{V} - \text{Payoff}|$$
-3.  **Market RMSE:** Root Mean Square Error between predicted prices and traded market prices.
-    $$\text{RMSE} = \sqrt{\frac{1}{T} \sum_{t=1}^{T} (\hat{V}_t - V_{market, t})^2}$$
+### 3.1. Generalization Metrics (Dimensionless Ratio Evaluation)
 
-These benchmarks collectively confirm that **PINN-BTC** is not just a theoretical artifact but a robust numerical solver capable of operating in production financial environments.
+During the training and in-training validation phases, the model is evaluated against a synthetic dataset sampled from a 5-dimensional hypercube using the **Mixed Distribution Strategy**. Given the vast dynamic range of Strike Prices ($K \in [10k, 500k]$ USDT), direct error measurement in currency units introduces significant scale bias.
+
+To mitigate this, we evaluate performance using the **Dimensionless Option Price Ratio** ($\mathcal{R} = V/K$). This approach assesses the neural network's ability to generalize the pricing law independent of asset magnitude.
+
+Let $\mathcal{R}_{true}$ denote the ground truth (Analytical Solution) and $\mathcal{R}_{pred}$ denote the model prediction. We define the following metrics:
+
+1.  **Symmetric Mean Absolute Percentage Error (SMAPE)**
+    The primary metric for assessing relative accuracy across varying price scales.
+
+```math
+    \text{SMAPE} = \frac{100\%}{N} \sum_{i=1}^{N} \frac{|\mathcal{R}_{pred}^{(i)} - \mathcal{R}_{true}^{(i)}|}{(|\mathcal{R}_{true}^{(i)}| + |\mathcal{R}_{pred}^{(i)}|)/2 + \epsilon}
+```
+
+2.  **Root Mean Squared Error (RMSE)**
+    Measures the standard deviation of prediction errors, heavily penalizing large deviations.
+
+```math
+    \text{RMSE} = \sqrt{\frac{1}{N} \sum_{i=1}^{N} (\mathcal{R}_{pred}^{(i)} - \mathcal{R}_{true}^{(i)})^2}
+```
+
+3.  **Mean Absolute Error (MAE)**
+    Represents the average magnitude of errors, providing a linear score of accuracy.
+
+```math
+    \text{MAE} = \frac{1}{N} \sum_{i=1}^{N} |\mathcal{R}_{pred}^{(i)} - \mathcal{R}_{true}^{(i)}|
+```
+
+4.  **Kink Mean Absolute Error (KinkMAE)**
+    A specialized metric designed to evaluate **Hard Attention** performance at the singularity point where $S=K$ and $\tau=0$ (At-The-Money at Expiration). Theoretical arbitrage-free conditions dictate a value of exactly 0.
+
+```math
+    \text{KinkMAE} = \frac{1}{N_{kink}} \sum_{j \in \Omega_{kink}} |\mathcal{R}_{pred}^{(j)} - 0|
+```
+
+1.  **Pearson Correlation Coefficient**
+    Evaluates the linear correlation between predicted and theoretical values to confirm trend alignment.
+
+```math
+    \text{Corr} = \frac{\sum (\mathcal{R}_{pred} - \bar{\mathcal{R}}_{pred})(\mathcal{R}_{true} - \bar{\mathcal{R}}_{true})}{\sqrt{\sum (\mathcal{R}_{pred} - \bar{\mathcal{R}}_{pred})^2} \sqrt{\sum (\mathcal{R}_{true} - \bar{\mathcal{R}}_{true})^2}}
+```
+
+6.  **Mean Bias**
+    Indicates systematic error, revealing whether the model tends to **overestimate** (positive bias) or **underestimate** (negative bias) the option premiums.
+
+```math
+    \text{Bias} = \frac{1}{N} \sum_{i=1}^{N} (\mathcal{R}_{pred}^{(i)} - \mathcal{R}_{true}^{(i)})
+```
+
+7.  **Max Error**
+    The worst-case prediction error observed within the batch, used for risk boundary assessment.
+
+```math
+    \text{MaxError} = \max_{i} |\mathcal{R}_{pred}^{(i)} - \mathcal{R}_{true}^{(i)}|
+```
+
+---
+
+### 3.2. Empirical Metrics (Real Market Valuation)
+
+For real-world inference and historical backtesting against market data (e.g., Binance Option Kline), the input parameters ($S, K, r, \sigma, \tau$) are fixed to realized market conditions extracted from historical timestamps.
+
+To avoid ambiguity with the time-to-maturity variable ($\tau$), we denote $N$ as the total number of observed data points (historical candles) and use the index $i$ to represent the $i$-th observation in the time series.
+
+Let $V_{mkt}^{(i)}$ be the observed market price and $V_{model}^{(i)}$ be the PINN-predicted price for the $i$-th sample.
+
+#### 1. Root Mean Squared Error (RMSE)
+Measures the standard deviation of the residuals in USDT across the evaluation period.
+
+* **RMSE$_{mkt}$ (Model vs. Market):**
+
+```math
+  \text{RMSE}_{mkt} = \sqrt{\frac{1}{N} \sum_{i=1}^{N} (V_{model}^{(i)} - V_{mkt}^{(i)})^2}
+```
+
+* **RMSE$_{BS}$ (Model vs. Analytical):**
+
+```math
+  \text{RMSE}_{BS} = \sqrt{\frac{1}{N} \sum_{i=1}^{N} (V_{model}^{(i)} - V_{BS}^{(i)})^2}
+```
+
+#### 2. Pearson Correlation Coefficient (Corr)
+Evaluates the linear relationship and trend alignment between the predicted prices and the baselines.
+
+* **Corr$_{mkt}$ (Model vs. Market):**
+  Indicates how well the model tracks market dynamics.
+
+```math
+  \text{Corr}_{mkt} = \frac{\sum_{i=1}^{N} (V_{model}^{(i)} - \bar{V}_{model})(V_{mkt}^{(i)} - \bar{V}_{mkt})}{\sqrt{\sum_{i=1}^{N} (V_{model}^{(i)} - \bar{V}_{model})^2} \sqrt{\sum_{i=1}^{N} (V_{mkt}^{(i)} - \bar{V}_{mkt})^2}}
+```
+
+* **Corr$_{BS}$ (Model vs. Analytical):**
+  Indicates the structural fidelity of the model to the governing physics.
+
+```math
+  \text{Corr}_{BS} = \frac{\sum_{i=1}^{N} (V_{model}^{(i)} - \bar{V}_{model})(V_{BS}^{(i)} - \bar{V}_{BS})}{\sqrt{\sum_{i=1}^{N} (V_{model}^{(i)} - \bar{V}_{model})^2} \sqrt{\sum_{i=1}^{N} (V_{BS}^{(i)} - \bar{V}_{BS})^2}}
+```
+
+#### 2. Pearson Correlation Coefficient (Corr)
+We denote this metric as **Corr** (distinct from $r$, the risk-free rate) to evaluate the linear relationship and trend alignment.
+
+* **Corr$_{mkt}$ (Model vs. Market):**
+    Indicates how well the model tracks market dynamics.
+
+```math
+    \text{Corr}_{mkt} = \frac{\sum (V_{model} - \bar{V}_{model})(V_{mkt} - \bar{V}_{mkt})}{\sqrt{\sum (V_{model} - \bar{V}_{model})^2} \sqrt{\sum (V_{mkt} - \bar{V}_{mkt})^2}}
+```
+
+* **Corr$_{BS}$ (Model vs. Analytical):**
+    Indicates the structural fidelity of the model to the governing physics.
+
+```math
+    \text{Corr}_{BS} = \frac{\sum (V_{model} - \bar{V}_{model})(V_{BS} - \bar{V}_{BS})}{\sqrt{\sum (V_{model} - \bar{V}_{model})^2} \sqrt{\sum (V_{BS} - \bar{V}_{BS})^2}}
+```
+---
+
+### 3.3. Physics-Informed Loss Components
+
+Beyond evaluation metrics, we monitor the component-wise breakdown of the loss function during training to ensure physical consistency with the Black-Scholes-Merton framework:
+
+* **PDE Loss ($\mathcal{L}_{PDE}$):** Measures the residual of the partial differential equation (Physics Violation).
+* **IVP Loss ($\mathcal{L}_{IVP}$):** Enforces the payoff condition at maturity ($\tau=0$).
+* **BVP Loss ($\mathcal{L}_{BVP}$):** Enforces asymptotic boundary conditions at $S \to 0$ and $S \to S_{max}$.
+* **Kink Loss ($\mathcal{L}_{Kink}$):** A weighted loss component focusing on the high-convexity region at the strike price.
