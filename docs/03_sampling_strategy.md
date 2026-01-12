@@ -76,8 +76,8 @@ This ensures that the model is trained extensively on At-the-Money (ATM) and Nea
 
 ### 3.3 Volatility & Interest Rates: Uniform Regimes
 To ensure the model is "Universal," we sample volatility ($\sigma$) and risk-free rates ($r$) uniformly across a wide theoretical spectrum:
-* $\sigma \sim \mathcal{U}[10\%, 200\%]$ (Covering both stable and black-swan crypto regimes).
-* $r \sim \mathcal{U}[0\%, 15\%]$ (Covering various DeFi staking yield environments).
+* $\sigma \sim \mathcal{U}[0.1, 2.0]$ (Covering both stable and black-swan crypto regimes).
+* $r \sim \mathcal{U}[0.0, 0.15]$ (Covering various DeFi staking yield environments).
 
 ---
 

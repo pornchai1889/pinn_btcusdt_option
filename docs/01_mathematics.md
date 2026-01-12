@@ -49,7 +49,7 @@ The physical price is reconstructed during inference and loss computation as:
 V_{pred} = \hat{V}_{net} \cdot K
 ```
 
-This technique decouples the magnitude of the asset price from the learning process, allowing the model to generalize seamlessly to any price range (e.g., from \$100 to \$1,000,000).
+This technique decouples the magnitude of the asset price from the learning process, allowing the model to generalize seamlessly to any price range (e.g., from \100$ to \1,000,000$).
 
 ---
 
