@@ -107,19 +107,7 @@ As the asset price increases significantly ($S \gg K$):
 
 ## 4. Analytical Benchmarks (Exact Solution)
 
-For validation purposes, we compare the PINN's approximation against the closed-form Black-Scholes analytical solution.
-
-Define the auxiliary variables $d_1$ and $d_2$:
-
-```math
-d_1 = \frac{\ln(S/K) + (r + \frac{\sigma^2}{2})\tau}{\sigma\sqrt{\tau}}
-```
-
-```math
-d_2 = d_1 - \sigma\sqrt{\tau}
-```
-
-The exact solutions $\Phi(\cdot)$ (standard normal CDF) are given by:
+For validation purposes, we compare the PINN's approximation against the closed-form Black-Scholes analytical solution. The exact prices for European Call ($C$) and Put ($P$) options are formulated as follows:
 
 **Call Option Price:**
 ```math
@@ -129,6 +117,16 @@ C(S, \tau) = S\Phi(d_1) - Ke^{-r\tau}\Phi(d_2)
 **Put Option Price:**
 ```math
 P(S, \tau) = Ke^{-r\tau}\Phi(-d_2) - S\Phi(-d_1)
+```
+
+Where $\Phi(\cdot)$ denotes the standard normal cumulative distribution function (CDF), and the auxiliary variables $d_1$ and $d_2$ are defined as:
+
+```math
+d_1 = \frac{\ln(S/K) + (r + \frac{\sigma^2}{2})\tau}{\sigma\sqrt{\tau}}
+```
+
+```math
+d_2 = d_1 - \sigma\sqrt{\tau}
 ```
 
 ---
