@@ -175,22 +175,6 @@ Evaluates the linear relationship and trend alignment between the predicted pric
   \text{Corr}_{BS} = \frac{\sum_{i=1}^{N} (V_{model}^{(i)} - \bar{V}_{model})(V_{BS}^{(i)} - \bar{V}_{BS})}{\sqrt{\sum_{i=1}^{N} (V_{model}^{(i)} - \bar{V}_{model})^2} \sqrt{\sum_{i=1}^{N} (V_{BS}^{(i)} - \bar{V}_{BS})^2}}
 ```
 
-#### 2. Pearson Correlation Coefficient (Corr)
-We denote this metric as **Corr** (distinct from $r$, the risk-free rate) to evaluate the linear relationship and trend alignment.
-
-* **Model vs. Market:**
-    Indicates how well the model tracks market dynamics.
-
-```math
-    \text{Corr}_{mkt} = \frac{\sum (V_{model} - \bar{V}_{model})(V_{mkt} - \bar{V}_{mkt})}{\sqrt{\sum (V_{model} - \bar{V}_{model})^2} \sqrt{\sum (V_{mkt} - \bar{V}_{mkt})^2}}
-```
-
-* **Model vs. Analytical:**
-    Indicates the structural fidelity of the model to the governing physics.
-
-```math
-    \text{Corr}_{BS} = \frac{\sum (V_{model} - \bar{V}_{model})(V_{BS} - \bar{V}_{BS})}{\sqrt{\sum (V_{model} - \bar{V}_{model})^2} \sqrt{\sum (V_{BS} - \bar{V}_{BS})^2}}
-```
 ---
 
 ### 3.3. Physics-Informed Loss Components
