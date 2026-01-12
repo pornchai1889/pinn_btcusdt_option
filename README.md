@@ -13,7 +13,7 @@
 
 This study presents a **universal Physics-Informed Neural Network (PINN)** framework for real-time pricing of European options, designed to generalize across a continuous 5-dimensional input space ($S, K, \tau, r, \sigma$). While traditional deep learning approaches often suffer from overfitting due to reliance on limited historical data, and numerical methods (e.g., Finite Difference) entail high computational costs, our approach leverages the governing **Black-Scholes Partial Differential Equation (PDE)** directly as a regularization mechanism.
 
-**Unlike traditional models limited by finite historical records, this framework is trained on a massive scale of over 5.5 billion physics-compliant stochastic scenarios, effectively covering nearly all theoretical market regimes.** This is achieved via a novel **Mixed-Distribution Sampling Strategy**, which synthesizes Gaussian and Power-law time-distributed samples to eliminate dependency on labeled datasets. Furthermore, we address the gradient discontinuity problem at the strike price through a specialized **Weighted Kink Loss**, enabling the model to capture high-curvature pricing dynamics with superior precision.
+**Unlike traditional models limited by finite historical records, this framework is trained on a massive scale of over 7.5 billion physics-compliant stochastic scenarios, effectively covering nearly all theoretical market regimes.** This is achieved via a novel **Mixed-Distribution Sampling Strategy**, which synthesizes Gaussian and Power-law time-distributed samples to eliminate dependency on labeled datasets. Furthermore, we address the gradient discontinuity problem at the strike price through a specialized **Weighted Kink Loss**, enabling the model to capture high-curvature pricing dynamics with superior precision.
 
 Empirical validation was conducted using real-world **Bitcoin (BTC/USDT)** options data retrieved via the Binance API. The results demonstrate that the proposed PINN framework not only aligns with analytical benchmarks but also exhibits robust performance in volatile market conditions. The final model is containerized and deployed via FastAPI, achieving millisecond-latency inference suitable for high-frequency trading and production-grade financial engineering tasks.
 
@@ -141,7 +141,7 @@ The sampling strategy is meticulously designed to cover the 5-dimensional input 
 * **Time to Maturity ($\tau$):** Power-law distribution (with power=2.0) to focus learning density near expiration ($\tau \to 0$), where the option value is most non-linear.
 * **Volatility ($\sigma$) & Rate ($r$):** Uniform sampling across wide theoretical regimes.
 
-> **Training Scale:** With a dynamic sampling rate of 55,000 points per epoch across 100,000 epochs, the model absorbs the physics of **5.5 billion unique market states**, ensuring robust generalization far beyond what is possible with static historical datasets.
+> **Training Scale:** With a dynamic sampling rate of 75,000 points per epoch across 100,000 epochs, the model absorbs the physics of **7.5 billion unique market states**, ensuring robust generalization far beyond what is possible with static historical datasets.
 
 ### 2.6 Experimental Setup & Hyperparameters
 
