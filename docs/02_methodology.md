@@ -10,6 +10,11 @@ We employ a **Multi-Layer Perceptron (MLP)** architecture with the following spe
 * **Hidden Layers:** 4 layers, each containing 256 neurons. This depth allows the model to capture the complex, non-linear pricing surfaces characteristic of volatile markets.
 * **Output Layer:** 1 Neuron, representing the normalized option price.
 
+![PINN Architecture Diagram](https://media.springernature.com/full/springer-static/image/art%3A10.1038%2Fs41598-023-49977-3/MediaObjects/41598_2023_49977_Fig1_HTML.png?as=webp)
+*Figure 1*: Schematic representation of the Physics-Informed Neural Network (PINN) architecture. The workflow demonstrates how domain variables (a) are processed through the neural network (b) to produce design variables (c), which are then optimized via a composite loss function (d) incorporating physics constraints. Adapted from [Nature Scientific Reports](https://www.nature.com/articles/s41598-023-49977-3).
+
+In the context of our **PINN-BTC** solver, this architecture is implemented as follows: The input layer **(a)** accepts the 5-dimensional market state vector $(S, K, \tau, r, \sigma)$. These inputs propagate through the fully connected perceptrons **(b)** to predict the normalized option price **(c)**. Crucially, the optimization **(d)** is not driven by labeled labels, but by the "Physics Loss" (Black-Scholes Residual) and "Constraint Loss" (Boundary & Kink conditions), enabling the model to learn financial laws purely through mathematical constraints.
+
 ### 1.2 Activation Functions
 The choice of activation functions is critical for Physics-Informed learning, as the network must be twice differentiable ($C^2$ continuous) to satisfy the Black-Scholes PDE.
 
