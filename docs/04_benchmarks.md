@@ -80,9 +80,9 @@ To ensure a rigorous evaluation of the **PINN-BTC** solver, covering both mathem
 
 During the training and in-training validation phases, the model is evaluated against a synthetic dataset sampled from a 5-dimensional hypercube using the **Mixed Distribution Strategy**. Given the vast dynamic range of Strike Prices ($K \in [10k, 500k]$ USDT), direct error measurement in currency units introduces significant scale bias.
 
-To mitigate this, we evaluate performance using the **Dimensionless Option Price Ratio** ($\mathcal{R} = V/K$). This approach assesses the neural network's ability to generalize the pricing law independent of asset magnitude.
+To mitigate this, we evaluate performance using the **Dimensionless Option Price Ratio** ($R = V/K$). This approach assesses the neural network's ability to generalize the pricing law independent of asset magnitude.
 
-Let $\mathcal{R}_{true}$ denote the ground truth (Analytical Solution) and $\mathcal{R}_{pred}$ denote the model prediction. We define the following metrics:
+Let $R_{true}$ denote the ground truth (Analytical Solution) and $R_{pred}$ denote the model prediction. We define the following metrics:
 
 1.  **Symmetric Mean Absolute Percentage Error (SMAPE)**
     The primary metric for assessing relative accuracy across varying price scales.
@@ -146,13 +146,13 @@ Let $V_{mkt}^{(i)}$ be the observed market price and $V_{model}^{(i)}$ be the PI
 #### 1. Root Mean Squared Error (RMSE)
 Measures the standard deviation of the residuals in USDT across the evaluation period.
 
-* **RMSE$_{mkt}$ (Model vs. Market):**
+* **Model vs. Market:**
 
 ```math
   \text{RMSE}_{mkt} = \sqrt{\frac{1}{N} \sum_{i=1}^{N} (V_{model}^{(i)} - V_{mkt}^{(i)})^2}
 ```
 
-* **RMSE$_{BS}$ (Model vs. Analytical):**
+* **Model vs. Analytical:**
 
 ```math
   \text{RMSE}_{BS} = \sqrt{\frac{1}{N} \sum_{i=1}^{N} (V_{model}^{(i)} - V_{BS}^{(i)})^2}
@@ -161,14 +161,14 @@ Measures the standard deviation of the residuals in USDT across the evaluation p
 #### 2. Pearson Correlation Coefficient (Corr)
 Evaluates the linear relationship and trend alignment between the predicted prices and the baselines.
 
-* **Corr$_{mkt}$ (Model vs. Market):**
+* **Model vs. Market:**
   Indicates how well the model tracks market dynamics.
 
 ```math
   \text{Corr}_{mkt} = \frac{\sum_{i=1}^{N} (V_{model}^{(i)} - \bar{V}_{model})(V_{mkt}^{(i)} - \bar{V}_{mkt})}{\sqrt{\sum_{i=1}^{N} (V_{model}^{(i)} - \bar{V}_{model})^2} \sqrt{\sum_{i=1}^{N} (V_{mkt}^{(i)} - \bar{V}_{mkt})^2}}
 ```
 
-* **Corr$_{BS}$ (Model vs. Analytical):**
+* **Model vs. Analytical:**
   Indicates the structural fidelity of the model to the governing physics.
 
 ```math
@@ -178,14 +178,14 @@ Evaluates the linear relationship and trend alignment between the predicted pric
 #### 2. Pearson Correlation Coefficient (Corr)
 We denote this metric as **Corr** (distinct from $r$, the risk-free rate) to evaluate the linear relationship and trend alignment.
 
-* **Corr$_{mkt}$ (Model vs. Market):**
+* **Model vs. Market:**
     Indicates how well the model tracks market dynamics.
 
 ```math
     \text{Corr}_{mkt} = \frac{\sum (V_{model} - \bar{V}_{model})(V_{mkt} - \bar{V}_{mkt})}{\sqrt{\sum (V_{model} - \bar{V}_{model})^2} \sqrt{\sum (V_{mkt} - \bar{V}_{mkt})^2}}
 ```
 
-* **Corr$_{BS}$ (Model vs. Analytical):**
+* **Model vs. Analytical:**
     Indicates the structural fidelity of the model to the governing physics.
 
 ```math
