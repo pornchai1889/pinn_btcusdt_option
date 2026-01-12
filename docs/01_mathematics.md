@@ -55,7 +55,7 @@ This technique decouples the magnitude of the asset price from the learning proc
 
 ## 3. Initial and Boundary Value Problems (IBVP)
 
-The solution to the PDE is unique only when constrained by specific Initial Conditions (IC) and Boundary Conditions (BC). We rigorously enforce these constraints via the loss function components $\mathcal{L}_{IVP}$ and $\mathcal{L}_{BVP}$.
+The solution to the PDE is unique only when constrained by specific Initial Conditions (IC) and Boundary Conditions (BC). We rigorously enforce these constraints via the loss function components $L_{IVP}$ and $L_{BVP}$.
 
 ### 3.1 Initial Condition (Payoff at $\tau=0$)
 At the moment of expiration ($\tau=0$), the option value is deterministic. This introduces a $C^0$ continuity but $C^1$ discontinuity (a "Kink") at $S=K$.
