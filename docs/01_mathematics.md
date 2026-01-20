@@ -20,7 +20,7 @@ The no-arbitrage price $V$ must satisfy the linear parabolic Partial Differentia
 We define the differential operator $\mathcal{N}[V]$ representing the PDE residual, which the Neural Network minimizes:
 
 ```math
-\mathcal{F}(V := \frac{\partial V}{\partial \tau} - \left( \frac{1}{2}\sigma^2 S^2 \frac{\partial^2 V}{\partial S^2} + rS \frac{\partial V}{\partial S} - rV \right) = 0
+\mathcal{F}(V) := \frac{\partial V}{\partial \tau} - \left( \frac{1}{2}\sigma^2 S^2 \frac{\partial^2 V}{\partial S^2} + rS \frac{\partial V}{\partial S} - rV \right) = 0
 ```
 
 ---
