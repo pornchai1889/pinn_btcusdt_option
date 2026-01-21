@@ -123,12 +123,12 @@ The individual loss components are defined as Mean Squared Errors (MSE):
 
 3.  **Boundary Value Loss:** Enforces asymptotic behavior at $S_{min}$ and $S_{max}$ ($N_{BVP}$).
 ```math
-\mathcal{L}_{BVP} = \frac{1}{N_{BVP}} \left[ \sum \left( \hat{V}(S_{min}, \tau) - V_{LB} \right)^2 + \sum \left( \hat{V}(S_{max}, \tau) - V_{UB} \right)^2 \right]
+\mathcal{L}_{BVP} = \frac{1}{N_{BVP}} \left[ \sum_{i=1}^{N_{BVP}} \left( \hat{V}(S_{min}, \tau_i) - V_{LB} \right)^2 + \sum_{i=1}^{N_{BVP}} \left( \hat{V}(S_{max}, \tau_i) - V_{UB} \right)^2 \right]
 ```
 
 4.  **Kink Loss (Hard Attention):** Specifically targets the critical point $S=K$ at $\tau=0$ to sharpen the hinge.
 ```math
-\mathcal{L}_{Kink} = \frac{1}{N_{Kink}} \sum_{j=1}^{N_{Kink}} \left( \hat{V}(K_j, 0) \right)^2
+\mathcal{L}_{Kink} = \frac{1}{N_{Kink}} \sum_{i=1}^{N_{Kink}} \left( \hat{V}(K_i, 0) \right)^2
 ```
 Note: For both Call and Put options, the payoff at $S=K$ is exactly 0.
 
@@ -163,6 +163,8 @@ The following table summarizes the specific configuration used to train the **Ca
 | | Time Sampling Power | $2.0$ (Focus on $\tau \to 0$) |
 | | Adaptive Std Dev | $1.0$ |
 | | Batch Sampling | ~10,000 samples/batch (Dynamic Mixed-Distribution) |
+| | PDE Multiplier | 4.0 |
+| | Kink Multiplier | 0.5 |
 | **Training Config** | Total Epochs | 100,000 |
 | | Learning Rate | $1 \times 10^{-4}$ (Adam Optimizer) |
 | **Loss Weights** | $\lambda_{Kink}$ (Strike Singularity) | **100.0** (Critical Priority) |
