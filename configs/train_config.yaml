@@ -22,8 +22,8 @@ market:
 # ------------------------------------------------------------------------------
 sampling:
   moneyness_range: [0.0, 2.0]    # If Put Option V = 0 (Lower Bound). Its max theoretical value approaches K as S to 0.
-  adaptive_std: 1.0              # Same or different focus (default: 1.0)           
-  time_sampling_power: 2.0       # Same or different focus (default: 2.0) if 1 is uniform in time
+  adaptive_std: 1000000.0              # Same or different focus (default: 1.0)           
+  time_sampling_power: 1.0       # Same or different focus (default: 2.0) if 1 is uniform in time
 
 # ------------------------------------------------------------------------------
 # 3. Model Architecture
@@ -46,14 +46,14 @@ training:
   
   n_sample_data: 10000
   n_sample_pde_multiplier: 4.0 # (default: 4.0)
-  n_sample_kink_multiplier: 0.0 # (default: 0.5)
+  n_sample_kink_multiplier: 0.5 # (default: 0.5)
 
   # --- Loss Balancing Weights (The Recipe) ---
   # Adjust these to prioritize different aspects of learning
   physics_loss_weight: 1.0   # Base physics law (PDE) (default: 1.0)
   ivp_loss_weight: 20.0      # Initial Condition (t=0), increased priority (default: 20.0)
   bvp_loss_weight: 20.0      # Boundary Condition (S_min, S_max), increased priority (default: 20.0)
-  kink_loss_weight: 0.0    # Sharpness at Strike Price (S=K, t=0), highest priority (default: 100.0)
+  kink_loss_weight: 20.0    # Sharpness at Strike Price (S=K, t=0), highest priority (default: 100.0)
   
   val_interval: 1000         # Evaluate model every val_interval epochs
   n_val_sample: 100000

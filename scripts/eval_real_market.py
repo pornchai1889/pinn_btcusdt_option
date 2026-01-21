@@ -481,7 +481,7 @@ class RealMarketEvaluator:
         ax_sigma.set_ylabel(r"Volatility ($\sigma$)", fontsize=12)
         ax_sigma.set_xlabel("Time to Maturity (Years)", fontsize=12)
 
-        ax_sigma.legend(loc="upper right", frameon=True, fontsize=10)
+        ax_sigma.legend(loc="lower right", frameon=True, fontsize=10)
         ax_sigma.grid(True, alpha=0.3)
         ax_sigma.set_ylim(bottom=0)
 
