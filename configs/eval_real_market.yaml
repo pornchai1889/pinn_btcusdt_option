@@ -1,7 +1,7 @@
 # configs/eval_real_market.yaml
 paths:
   # Path to the training run folder containing the model checkpoint
-  run_folder: "runs/train_2026-01-21_13-02-36_call"
+  run_folder: "runs/train_2026-01-22_04-40-51_call"
   
   # Model filename (usually model.pth)
   model_filename: "model.pth"
